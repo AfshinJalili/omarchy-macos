@@ -22,6 +22,7 @@
 
 #include "barDeco.hpp"
 #include "globals.hpp"
+#include "maximizedDecorations.hpp"
 
 extern "C" {
 #include <lua.h>
@@ -243,6 +244,8 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
   static auto P4 = Event::bus()->m_events.config.preReload.listen([&] { onPreConfigReload(); });
   static auto P5 = Event::bus()->m_events.config.reloaded.listen([&] { onConfigReloaded(); });
 
+  hookMaximizedDecorations();
+
   // add deco to existing windows
   for (auto &w : Desktop::windowState()->windows()) {
     if (w->isHidden() || !validMapped(w))
@@ -258,6 +261,8 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
 }
 
 static void exitOmarchyFloating() {
+  unhookMaximizedDecorations();
+
   for (auto &m : State::monitorState()->monitors())
     m->m_scheduledRecalc = true;
 

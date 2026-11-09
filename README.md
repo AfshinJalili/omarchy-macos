@@ -14,6 +14,7 @@ macOS-style title bars for [Hyprland](https://hyprland.org): traffic lights on t
 - **macOS glyphs.** Close (×), minimize (−), and full screen (two triangles) are drawn as vector shapes, not text. Hovering any light shows all three, as on macOS.
 - **Unfocused windows.** Lights turn grey and the title dims.
 - **Monitors with different scales.** The title keeps its size when a window moves between monitors with different scales, including mid-drag across both.
+- **Bars stay during a swipe.** Hyprland drops the decorations of a maximized window while it slides past a workspace with a fullscreen window. The plugin turns them back on (`maximizedDecorations.cpp`).
 - **Drop-in.** The plugin registers as `hyprbars` and keeps the `hl.plugin.hyprbars` Lua interface and `plugin.hyprbars.*` options, so configs written for hyprbars or Omarchy's titlebars keep working. Square buttons (`button_rounding` ≥ 0) still draw the classic way.
 
 It is a fork of [Omarchy's titlebars](https://github.com/omacom/omarchy-hyprland-titlebars), itself a fork of [hyprbars](https://github.com/hyprwm/hyprland-plugins/tree/main/hyprbars). Dragging, double-click to maximize, the `%WINDOW%` placeholder, app-name titles, and `workspace_tag` all come from those.
@@ -171,6 +172,7 @@ The scripts in `test/` run a disposable nested Hyprland, so a broken build canno
 - `test/run-nested.sh [scale] [out.png] [x,y]` screenshots a focused and an unfocused window, optionally hovering a point.
 - `test/run-two-monitors.sh` moves a window from a 1x to a 2x monitor and screenshots its title on each.
 - `test/run-swap.sh [reverse]` swaps between Omarchy's plugin and this one with a config reload, as the Omarchy wrapper does, and reports whether the options, `hl.plugin.hyprbars` and the open window's bar survive.
+- `test/run-swipe.sh [out.png] [plugin.so]` screenshots a maximized window sliding past a fullscreen workspace, where its bar must stay.
 
 `tools/verify.py` is upstream's verifier for dragging, maximize, and action targeting.
 
@@ -179,6 +181,7 @@ The scripts in `test/` run a disposable nested Hyprland, so a broken build canno
 - **Build** (`.github/workflows/build.yml`) compiles every push and pull request against the Hyprland release in `ci/hyprland-version`. `ci/hyprland-headers.sh` installs that release's headers with the exact hyprwm libraries its `flake.lock` pins, so the check does not depend on what Arch ships.
 - **Hyprland release** (`.github/workflows/hyprland-release.yml`) runs daily. When Hyprland publishes a release `hyprpm.toml` does not pin, it builds `main` against it; on success it pins the release, tags the commit `hlX.Y.Z`, and moves `ci/hyprland-version`; on failure it opens an issue.
 - When a Hyprland release changes the plugin API, port `main`, and keep the last working commit for the old version pinned in `hyprpm.toml`.
+- `maximizedDecorations.cpp` hooks `IHyprRenderer::renderWindow`, which is outside the plugin API. A changed signature fails the build with a `static_assert`; a renamed function only logs a warning and loses the fix. Delete the file once Hyprland draws those windows with their own decorations.
 
 ## License
 
