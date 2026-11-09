@@ -10,8 +10,6 @@
 local THREE_FINGER_DRAG = false
 
 local SWIPE = THREE_FINGER_DRAG and 4 or 3
-local HOME = os.getenv("HOME")
-local APP_EXPOSE = HOME .. "/.local/bin/omarchy-macos-app-expose"
 
 hl.config({ input = { touchpad = { drag_3fg = THREE_FINGER_DRAG and 1 or 0 } } })
 
@@ -23,9 +21,13 @@ end
 
 -- Mission Control comes from the gloview plugin (hypr.macos.gloview). Looked up
 -- when the swipe ends, so the gesture does nothing while gloview isn't loaded.
-local function mission_control()
-  if hl.plugin.gloview then
-    hl.plugin.gloview.toggle()
+-- open and close are safe to repeat, so the swipe needn't know if it is open.
+local function mission_control(action)
+  return function()
+    local gloview = hl.plugin.gloview
+    if gloview and gloview[action] then
+      gloview[action]()
+    end
   end
 end
 
@@ -63,11 +65,9 @@ end
 -- Swipe left/right: move between workspaces (Spaces), following the fingers.
 hl.gesture({ fingers = SWIPE, direction = "horizontal", action = "workspace" })
 
--- Swipe up: Mission Control. Swipe up again, Esc or a click closes it.
-hl.gesture({ fingers = SWIPE, direction = "up", action = mission_control })
-
--- Swipe down: App Exposé, the windows of the focused app.
-hl.gesture({ fingers = SWIPE, direction = "down", action = run(APP_EXPOSE) })
+-- Swipe up: Mission Control. Swipe down, Esc or a click closes it.
+hl.gesture({ fingers = SWIPE, direction = "up", action = mission_control("open") })
+hl.gesture({ fingers = SWIPE, direction = "down", action = mission_control("close") })
 
 -- Pinch with thumb and three fingers: Launchpad.
 hl.gesture({ fingers = 4, direction = "pinchin", action = run("omarchy-menu toggle apps") })
