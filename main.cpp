@@ -45,7 +45,10 @@ static void onNewWindow(PHLWINDOW window) {
   auto bar = makeShared<COmarchyFloatingHyprBar>(window);
   g_pOmarchyFloatingGlobalState->bars.emplace_back(bar);
   bar->m_self = bar;
-  HyprlandAPI::addWindowDecoration(OMARCHY_FLOATING_PHANDLE, window, std::move(bar));
+  HyprlandAPI::addWindowDecoration(OMARCHY_FLOATING_PHANDLE, window, bar);
+  // Decide now whether the bar shows. Otherwise it waits for the next rule
+  // update, which can be a workspace switch away.
+  bar->updateRules();
 }
 
 static void registerSharedNames();
@@ -182,6 +185,8 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
 
   static auto P = Event::bus()->m_events.window.open.listen([&](PHLWINDOW w) { onNewWindow(w); });
   static auto P3 = Event::bus()->m_events.window.updateRules.listen([&](PHLWINDOW w) { onUpdateWindowRules(w); });
+  // A bar shows only on a floating window, so floating or tiling one decides it again.
+  static auto P6 = Event::bus()->m_events.window.floating.listen([&](PHLWINDOW w) { onUpdateWindowRules(w); });
 
   g_pOmarchyFloatingGlobalState->config.barColor = makeShared<Config::Values::CColorValue>("plugin:hyprbars:bar_color", "Change the bar color", 0x88333333);
   g_pOmarchyFloatingGlobalState->config.textColor = makeShared<Config::Values::CColorValue>("plugin:hyprbars:col.text", "Change the text color", 0xffffffff);

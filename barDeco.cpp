@@ -756,6 +756,9 @@ void COmarchyFloatingHyprBar::onConfigReloaded() {
   m_pTextTex = nullptr;
   m_titleTexByScale.clear();
 
+  // A reload can change workspace_tag or enabled, so whether the bar shows is
+  // decided again here rather than at the window's next rule update.
+  updateRules();
   g_pDecorationPositioner->repositionDeco(this);
 
   // Bars start disabled, so the reload that enables them has to make room for
