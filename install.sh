@@ -31,6 +31,16 @@ set_aside() {
 
 "$repo/scripts/build-plugins.sh"
 
+# A running gloview, the plugin Mission Control was forked from, holds the
+# Hyprland hook Mission Control needs, and one loaded by hand (hyprctl plugin
+# load) is not unloaded by a config reload. Unload it the safe way first: its
+# own teardown, then the unload.
+if hyprctl plugin list -j 2>/dev/null | jq -e '.[] | select(.name == "GloView")' >/dev/null; then
+  hyprctl gloviewunload >/dev/null || true
+  sleep 0.3
+  hyprctl plugin unload "$HOME/.local/lib/gloview/gloview.so" >/dev/null || true
+fi
+
 mkdir -p "$hypr/macos"
 set_aside "$hypr/macos.lua"
 ln -s "$repo/config/macos.lua" "$hypr/macos.lua"
@@ -53,8 +63,8 @@ grep -qxF "$line" "$hypr/hyprland.lua" || echo "$line" >>"$hypr/hyprland.lua"
 
 [[ -d $backup ]] && echo "Replaced files are in $backup"
 
-# A reload applies the config now, and swaps any running hyprbars-macos or
-# gloview for the new plugins.
+# A reload applies the config now, and swaps a running hyprbars-macos for the
+# new titlebar plugin.
 hyprctl reload >/dev/null
 errors=$(hyprctl configerrors)
 [[ -z ${errors//[[:space:]]/} ]] || { echo "$errors" >&2; exit 1; }
