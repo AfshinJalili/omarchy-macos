@@ -187,8 +187,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // --- input / keyboard navigation ---
     addInt("plugin:mission_control:focus_follows_mouse", Config::INTEGER{1});      // keyboard selection tracks the hovered tile
     addInt("plugin:mission_control:scroll_switches_workspace", Config::INTEGER{1});// wheel over the main area steps prev/next workspace
+    addInt("plugin:mission_control:scroll_threshold", Config::INTEGER{60}); // trackpad scroll distance that steps one workspace (one step per stroke)
+    addInt("plugin:mission_control:swipe_threshold", Config::INTEGER{60});  // trackpad swipe distance while open: left/right steps a workspace, down closes
     addInt("plugin:mission_control:passthrough_keys", Config::INTEGER{1});         // unhandled keys reach Hyprland (keybinds keep working)
     addInt("plugin:mission_control:exit_on_click", Config::INTEGER{1});           // click on empty space dismisses the overview
+    addInt("plugin:mission_control:click_card_closes", Config::INTEGER{1});     // clicking a workspace card leaves for that workspace, as on macOS
     addInt("plugin:mission_control:debug_logs", Config::INTEGER{0});              // verbose [mission-control] logging
     addInt("plugin:mission_control:select_border_size", Config::INTEGER{3});      // keyboard-selected tile ring thickness (px)
     addColor("plugin:mission_control:select_border", Config::INTEGER{0xf066ccffLL}); // keyboard-selected tile ring (distinct from hover)

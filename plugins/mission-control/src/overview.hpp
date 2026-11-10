@@ -102,6 +102,12 @@ class Overview {
     void renderAboveLayers() const; // re-render opted-in TOP/OVERLAY layer surfaces on top of the overview
     bool onMouseButton(const IPointer::SButtonEvent& e);
     bool onMouseAxis(const IPointer::SAxisEvent& e); // scroll the workspace strip when it overflows
+    void onTrackpadScroll(const IPointer::SAxisEvent& e); // two-finger scroll over the main area: one workspace per stroke
+    // Trackpad swipes that start while the overview is open belong to it, not to the
+    // desktop's workspace swipe: left/right shows the next/previous workspace, down closes.
+    bool onSwipeBegin();
+    bool onSwipeUpdate(const IPointer::SSwipeUpdateEvent& e);
+    bool onSwipeEnd();
     void onMouseMove();
     void updateHover(); // recompute hovered tile/card from current cursor pos
     void onKey(const IKeyboard::SKeyEvent& e, bool& cancel);
@@ -263,6 +269,16 @@ class Overview {
     CHyprSignalListener m_renderStageL;
     CHyprSignalListener m_mouseButtonL;
     CHyprSignalListener m_mouseAxisL;
+    CHyprSignalListener m_swipeBeginL;
+    CHyprSignalListener m_swipeUpdateL;
+    CHyprSignalListener m_swipeEndL;
+    bool                m_pressCardCloses = false; // the press switched to a strip card; its release closes
+    bool                m_swipeOwned = false; // the swipe in progress began while the overview was open
+    bool                m_swipeDone  = false; // ...and has already stepped or closed
+    Vector2D            m_swipeDelta;
+    double              m_scrollAccum[2] = {0.0, 0.0}; // trackpad scroll per axis, since the stroke began
+    bool                m_scrollDone     = false;      // the stroke has already stepped once
+    uint32_t            m_scrollLastMs   = 0;
     CHyprSignalListener m_mouseMoveL;
     CHyprSignalListener m_keyL;
     CFunctionHook*      m_shouldRenderHook = nullptr;
@@ -348,7 +364,7 @@ class Overview {
     void   closeTileWindow(int i);            // send-close a tile's window, then reflow the rest
     void   replayReflow(std::vector<std::pair<PHLWINDOW, LRect>>& oldBoxes); // glide tiles into new slots after a removal
     void   syncTiles();                       // add/drop tiles when the displayed workspace's window set changes, then reflow
-    void   stepWorkspace(int dir);            // scroll-wheel over the main area: show prev/next workspace card
+    void   stepWorkspace(int dir, bool wrap = true); // scroll-wheel over the main area: show prev/next workspace card
     // mission_control:next / mission_control:prev with the overview CLOSED: walk the LIVE desktop through the
     // same ordered list the strip would show (dynamic_workspaces' empty tail included).
     std::vector<PHLWORKSPACE> liveWorkspaceList(const PHLMONITOR& m) const;
