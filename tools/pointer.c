@@ -42,7 +42,17 @@ int main(int argc, char **argv) {
       zwlr_virtual_pointer_v1_button(pointer, now, 272, WL_POINTER_BUTTON_STATE_PRESSED);
     else if (!strcmp(command, "up"))
       zwlr_virtual_pointer_v1_button(pointer, now, 272, WL_POINTER_BUTTON_STATE_RELEASED);
-    else if (!strcmp(command, "wait"))
+    // Hyprland resets the source on each axis value, so the source follows the value.
+    else if (!strcmp(command, "scroll")) { // scroll <axis 0=vertical 1=horizontal> <delta>: one trackpad scroll event
+      zwlr_virtual_pointer_v1_axis(pointer, now, x, wl_fixed_from_int(y));
+      zwlr_virtual_pointer_v1_axis_source(pointer, WL_POINTER_AXIS_SOURCE_FINGER);
+    } else if (!strcmp(command, "stop")) { // stop <axis>: the fingers lift
+      zwlr_virtual_pointer_v1_axis_stop(pointer, now, x);
+      zwlr_virtual_pointer_v1_axis_source(pointer, WL_POINTER_AXIS_SOURCE_FINGER);
+    } else if (!strcmp(command, "wheel")) { // wheel <axis> <notches>
+      zwlr_virtual_pointer_v1_axis_source(pointer, WL_POINTER_AXIS_SOURCE_WHEEL);
+      zwlr_virtual_pointer_v1_axis_discrete(pointer, now, x, wl_fixed_from_int(15 * y), y);
+    } else if (!strcmp(command, "wait"))
       usleep(x * 1000);
     zwlr_virtual_pointer_v1_frame(pointer);
     wl_display_roundtrip(display);
