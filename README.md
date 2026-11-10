@@ -27,6 +27,12 @@ In Mission Control, swipe left or right with three fingers, or scroll with two, 
 
 Tap to click, two-finger right click and natural scrolling stay as Omarchy and your `input.lua` set them.
 
+## Themes
+
+Two Omarchy themes come with it, **Macos Light** and **Macos Dark**: macOS colours, the WhiteSur icons, and menus at 80% opacity so the frosted glass from `look` shows through. Pick one with `omarchy theme set "Macos Dark"` or Omarchy's theme menu.
+
+They live in `themes/` and the installer links them into `~/.config/omarchy/themes/`, so this repository is the one copy. Edit them here, then run `omarchy theme set` again to apply the change. Wallpapers of your own go in `~/.config/omarchy/backgrounds/macos-dark/` (or `macos-light`), outside the repository.
+
 ## Install
 
 Needs Omarchy with the Lua config, on Hyprland 0.56 or 0.57, and `cmake`, `git`, `jq` and `pkg-config`.
@@ -42,8 +48,9 @@ The installer:
 - links `~/.config/hypr/macos.lua` and the modules in `~/.config/hypr/macos/` to this repository, so a `git pull` and a reload update them;
 - creates `~/.config/hypr/macos/settings.lua` with every feature on, unless you have one;
 - adds `require("hypr.macos")` to `~/.config/hypr/hyprland.lua`;
+- links the two themes into `~/.config/omarchy/themes/`;
 - installs a pacman hook that rebuilds the plugins after each Hyprland upgrade (skip it with `--no-hook`);
-- moves any file it replaces to `~/.config/hypr/macos/backup-<time>/`.
+- moves any file or theme it replaces to `~/.config/hypr/macos/backup-<time>/`.
 
 `./uninstall.sh` removes it again and leaves your `settings.lua`.
 

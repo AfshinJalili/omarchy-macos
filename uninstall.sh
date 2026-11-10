@@ -1,5 +1,6 @@
 #!/bin/bash
-# Remove omarchy-macos: the config links, the plugins and the pacman hook.
+# Remove omarchy-macos: the config and theme links, the plugins and the pacman
+# hook. A theme in use stays applied until you pick another.
 # ~/.config/hypr/macos/settings.lua and any backups stay. A running session
 # keeps its plugins until the next login.
 set -euo pipefail
@@ -15,6 +16,9 @@ unlink_ours() {
 
 unlink_ours "$hypr/macos.lua"
 for link in "$hypr"/macos/*.lua; do
+  unlink_ours "$link"
+done
+for link in "$HOME"/.config/omarchy/themes/*; do
   unlink_ours "$link"
 done
 sed -i '/^require("hypr.macos")$/d' "$hypr/hyprland.lua"

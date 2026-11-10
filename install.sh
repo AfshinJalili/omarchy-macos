@@ -4,6 +4,7 @@
 #   * link the config into ~/.config/hypr/ (macos.lua and the modules in macos/)
 #   * create ~/.config/hypr/macos/settings.lua, the on/off switches, unless it exists
 #   * load it from hyprland.lua
+#   * link the macOS Light and macOS Dark themes into ~/.config/omarchy/themes/
 #   * install a pacman hook that rebuilds the plugins after Hyprland upgrades
 # Files it replaces are moved to ~/.config/hypr/macos/backup-<time>/.
 #
@@ -39,6 +40,16 @@ for module in "$repo"/config/macos/*.lua; do
   ln -s "$module" "$hypr/macos/$(basename "$module")"
 done
 [[ -e $hypr/macos/settings.lua ]] || cp "$repo/config/macos/defaults.lua" "$hypr/macos/settings.lua"
+
+# Omarchy lists linked theme folders like its own and copies one in when it is
+# applied, so edits here reach the desktop on the next omarchy theme set.
+themes="$HOME/.config/omarchy/themes"
+mkdir -p "$themes"
+for theme in "$repo"/themes/*/; do
+  theme="${theme%/}"
+  set_aside "$themes/$(basename "$theme")"
+  ln -s "$theme" "$themes/$(basename "$theme")"
+done
 
 line='require("hypr.macos")'
 grep -qxF "$line" "$hypr/hyprland.lua" || echo "$line" >>"$hypr/hyprland.lua"
