@@ -18,8 +18,8 @@ local MINIMIZE = "omarchy-hyprland-window-minimize %WINDOW%"
 local ZOOM = "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"toggle\", " .. WINDOW .. " })'"
 local STOCK_ICONS = { ["×"] = true, ["□"] = true, ["−"] = true }
 
--- omarchy-macos-titlebars, like hyprbars-macos before it, takes Omarchy's
--- plugin name and reports a version starting with "macos-".
+-- omarchy-macos-titlebars takes Omarchy's plugin name and reports a version
+-- starting with "macos-".
 local function macos_titlebars_loaded()
   return plugin.loaded(function(loaded)
     return loaded.name == "hyprbars" and tostring(loaded.version):find("^macos%-") ~= nil
@@ -93,12 +93,7 @@ end
 local stock_load = hl.plugin.load
 hl.plugin.load = function(path, ...)
   local result
-  if path == TITLEBARS and macos_titlebars_loaded() then
-    -- Already running: every reload asks again. It may be hyprbars-macos, the
-    -- plugin this one replaced, until the next login; loading a second plugin
-    -- under the same name next to it would clash.
-    result = true
-  elseif path == TITLEBARS and plugin.installed(MACOS_TITLEBARS) then
+  if path == TITLEBARS and plugin.installed(MACOS_TITLEBARS) then
     -- A build made for another Hyprland version fails to load; Omarchy's
     -- plugin then takes its place, so floating windows keep their titlebars.
     local ok, loaded = pcall(stock_load, MACOS_TITLEBARS, ...)

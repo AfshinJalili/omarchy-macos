@@ -41,7 +41,8 @@ done
 [[ -e $hypr/macos/settings.lua ]] || cp "$repo/config/macos/defaults.lua" "$hypr/macos/settings.lua"
 
 # Left behind by the separate gestures, hyprbars-macos and gloview installs
-# this package replaces.
+# this package replaces. Their plugins, if running, are swapped for the new ones
+# at the reload below; a loaded library can be deleted safely.
 set_aside "$hypr/macos/gloview.lua"
 rm -rf "$HOME/.local/lib/gloview" "$HOME/.local/lib/hyprbars-macos"
 
@@ -52,9 +53,8 @@ grep -qxF "$line" "$hypr/hyprland.lua" || echo "$line" >>"$hypr/hyprland.lua"
 
 [[ -d $backup ]] && echo "Replaced files are in $backup"
 
-# A reload applies the config now. A session that is already running the old
-# hyprbars-macos or gloview plugins keeps them until the next login (the
-# config checks for them), and the new plugins load then.
+# A reload applies the config now, and swaps any running hyprbars-macos or
+# gloview for the new plugins.
 hyprctl reload >/dev/null
 errors=$(hyprctl configerrors)
 [[ -z ${errors//[[:space:]]/} ]] || { echo "$errors" >&2; exit 1; }

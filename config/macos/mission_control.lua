@@ -3,13 +3,7 @@
 -- live in hypr.macos.gestures.
 local plugin = require("hypr.macos.plugin")
 
--- A session that started with gloview keeps it until the next login: the two
--- hook the same Hyprland function and cannot both load.
-local gloview = plugin.loaded(function(loaded)
-  return loaded.name == "GloView"
-end)
-
-if not gloview and not plugin.load(plugin.MISSION_CONTROL) then
+if not plugin.load(plugin.MISSION_CONTROL) then
   return
 end
 if not plugin.mission_control() then

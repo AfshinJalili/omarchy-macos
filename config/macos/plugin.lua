@@ -1,5 +1,10 @@
 -- Loads omarchy-macos's Hyprland plugins, which may be absent or built for
 -- another Hyprland version, without breaking the rest of the config.
+--
+-- hl.plugin.load only declares a plugin: after each config pass Hyprland loads
+-- the ones declared for the first time, unloads every one no longer declared,
+-- and reloads the config if that changed anything. A plugin stays loaded only
+-- while every pass declares it.
 local M = {}
 
 -- Where install.sh puts the plugins it builds.
@@ -15,7 +20,7 @@ function M.installed(path)
   return file ~= nil
 end
 
--- Returns true when the plugin at `path` is installed and loads.
+-- Returns true when the plugin at `path` is installed and declared.
 function M.load(path)
   if not M.installed(path) then
     return false
@@ -36,10 +41,9 @@ function M.loaded(matches)
   end
 end
 
--- Mission Control's Lua functions. Until the next login a session can still
--- run gloview, the plugin it was forked from, under its old name.
+-- Mission Control's Lua functions, once its plugin is loaded.
 function M.mission_control()
-  return hl.plugin.mission_control or hl.plugin.gloview
+  return hl.plugin.mission_control
 end
 
 return M
