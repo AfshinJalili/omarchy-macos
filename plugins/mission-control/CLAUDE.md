@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-GloView is a **Hyprland compositor plugin** (C++23, built as `gloview.so`) that draws a
+Mission Control (omarchy-macos-mission-control, a hard fork of gloview) is a **Hyprland
+compositor plugin** (C++23, built as `omarchy-macos-mission-control.so`) that draws a
 macOS Mission Control-style window overview: a workspace strip on one edge + live previews
 of the displayed workspace's windows below, over a blurred backdrop. Everything is rendered
 compositor-side during Hyprland's render stage; the real windows are hidden while it is up.
@@ -16,12 +17,12 @@ compositor-side during Hyprland's render stage; the real windows are hidden whil
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
-# Rebuild + hot-reload into the running Hyprland (use this when iterating)
+# Rebuild + hot-reload into the running Hyprland. Only ever into a nested session
+# (../../tools/nested.sh): a plugin crash kills the whole session, and the user works in it.
 cmake --build build --target reload   # build + mission_control_unload + same-path plugin unload/load
 
-# Nix (what CI runs — the only CI job — and how NixOS users build it)
-nix build .#gloview --print-build-logs
-nix develop                            # shell with the pinned Hyprland + clang-tools
+# Nested test of scrolling and clicking (opens out of sight on an empty workspace)
+test/run-input.sh
 
 # Invoke at runtime
 hyprctl mission_control        # toggle (exact hyprctl command, not lua-evaluated)
@@ -34,28 +35,23 @@ hyprctl mission_control_unload  # immediate animation-free teardown; the `reload
 # lua (Lua config only): hl.plugin.mission_control.{toggle,open,close,desktop,allworkspaces,next,prev,setworkspace}
 ```
 
-There are **no tests** and no linter beyond compiler warnings (`-Wall -Wextra`, C++23).
-"Tested" means it ran in Hyprland: build, `--target reload`, then exercise the real path
-(binds, dispatchers, config options, layout modes, multi-monitor). `plugin:mission_control:debug_logs = 1`
-plus `hyprctl rollinglog` gives the `[mission-control]` trace.
+`test/run-input.sh` is the only automated test; otherwise "tested" means it ran in a
+nested Hyprland: build, load, then exercise the real path (binds, dispatchers, config
+options, layout modes, multi-monitor). `plugin:mission_control:debug_logs = 1` plus
+`hyprctl rollinglog` gives the `[mission-control]` trace.
 
 The built ABI must match the running Hyprland exactly — a header/Hyprland version skew
-produces a `.so` that crashes on load. Local builds use the installed Hyprland via
-`pkg-config hyprland`; `flake.nix` pins a **tagged** Hyprland release (never `main`, whose
-dep tree is intermittently unbuildable) and downstream sets `inputs.hyprland.follows`.
-When that pin and the version the source targets diverge, `nix build` (and therefore CI) is
-compiling against a different compositor than local dev. The source targets **Hyprland 0.57**;
-`hyprpm.toml`'s `commit_pins` send 0.56.x (matched by Hyprland commit hash) to the last
-pre-0.57 gloview commit. A port to a new Hyprland series adds pins for the previous one.
+produces a `.so` that crashes on load. Builds use the installed Hyprland via
+`pkg-config hyprland`. `main` targets **Hyprland 0.57**; the `hyprland-0.56` branch
+carries the 0.56 sources, and the root `hyprpm.toml` pins 0.56.x to it. A fix goes on
+both branches. omarchy-macos's `scripts/build-plugins.sh` picks the right one.
 
 ## Reloading (there is no `reload.sh` — and on purpose)
 
-Users install/reload via **`hyprpm`** (`hyprpm.toml` + `flake.nix` ship in-tree). The dev
-fast-loop is the CMake **`reload`** target (`cmake --build build --target reload`), which
-builds then does a *plain same-path* `hyprctl plugin unload <so>; hyprctl plugin load <so>`.
-It also unloads a hyprpm-installed copy at `/var/cache/hyprpm/$USER/gloview/gloview.so` —
-that copy autoloads at session start and already holds the `shouldRenderWindow` hooks, and
-two instances cannot trampoline the same function prologue.
+Users install through omarchy-macos's `install.sh`. The dev fast-loop is the CMake
+**`reload`** target (`cmake --build build --target reload`), which builds then does a
+*plain same-path* `hyprctl plugin unload <so>; hyprctl plugin load <so>`. Two instances
+cannot both load: they hook the same `shouldRenderWindow` prologue.
 
 No unique-`/tmp`-path copy is needed — **but only because of `-fno-gnu-unique`** (in
 `CMakeLists.txt` `add_compile_options`). This flag is load-bearing for reload, not cosmetic:
@@ -95,7 +91,7 @@ Four translation units, layered by Hyprland coupling:
 
 - **`src/main.cpp`** (~375 lines) — plugin entry points (`PLUGIN_INIT` / `PLUGIN_EXIT` /
   `PLUGIN_API_VERSION`) and nothing else. Registers all `plugin:mission_control:*` config values,
-  the dispatchers, the `hyprctl` commands, and (Lua config only) the `gloview.*` Lua
+  the dispatchers, the `hyprctl` commands, and (Lua config only) the `hl.plugin.mission_control.*` Lua
   functions. Owns the `g_overview` singleton. Every user-facing entry point exists here in
   **three parallel registrations** — `addDispatcherV2`, `registerHyprCtlCommand`
   (`IPC::Socket1::SCommand`, `.match = COMMAND_MATCH_EXACT`), `addLuaFunction` — and a new
@@ -447,5 +443,5 @@ layer surfaces *on top of* the overview.
   globals, `PascalCase` types). Comments explain *why*, and specifically which
   Hyprland/glibc/driver behaviour a line is dodging — do not delete one without understanding
   what it defends against.
-- The version string lives in four places that must stay in sync: `CMakeLists.txt`,
-  `flake.nix`, the `PLUGIN_INIT` return value, and `packaging/aur/PKGBUILD`.
+- The version string lives in two places that must stay in sync: `CMakeLists.txt` and
+  the `PLUGIN_INIT` return value.

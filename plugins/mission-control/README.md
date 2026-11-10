@@ -1,49 +1,32 @@
-# GloView
-[![license](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/fedsfarm/gloview/blob/main/LICENSE) [![Matrix](https://img.shields.io/badge/Matrix-Join%20chat-green?logo=matrix&logoColor=white)](https://escape.feds.farm/#main:feds.farm) [![Donate](https://img.shields.io/badge/Donate-XMR%20%C2%B7%20BTC%20%C2%B7%20ETH-orange?logo=monero&logoColor=white&labelColor=555)](#donate)
+# omarchy-macos-mission-control
 
-https://github.com/user-attachments/assets/0a3d812a-eae0-4ca5-8698-7a006e540857
+A macOS Mission Control-style overview for Hyprland: a strip of desktops along the top and live previews of the shown desktop's windows, over a blurred backdrop.
 
-A better macOS Mission Control-style overview plugin for Hyprland
+It is a hard fork of [gloview](https://github.com/fedsfarm/gloview) by Vergil (GPLv3, see `LICENSE`), renamed and changed for [omarchy-macos](../../README.md). It does not track upstream; good changes there are ported by hand. Its options, Lua table, dispatchers and `hyprctl` commands are gloview's under the name `mission_control`.
 
 ## Install
 
-Via hyprpm:
+Part of omarchy-macos: its `install.sh` builds this plugin for your Hyprland and loads it, and binds Ctrl + Up and the three-finger swipe up to it.
 
-```sh
-hyprpm add https://github.com/fedsfarm/gloview
-hyprpm enable gloview
-```
-
-### Arch (AUR)
-
-```sh
-yay -S gloview
-```
-
-### Nixos
-
-```nix
-inputs.gloview = { url = "github:fedsfarm/gloview"; inputs.hyprland.follows = "hyprland"; };
-```
-```nix
-wayland.windowManager.hyprland = {
-  enable = true;
-  plugins = [ inputs.gloview.packages.${pkgs.system}.gloview ];
-  settings.bind = [ "SUPER, TAB, mission_control:toggle" ];
-};
-```
-
-## Manual build
+## Build
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-Produces `build/omarchy-macos-mission-control.so`. The ABI must match the running Hyprland exactly —
-build against the same headers, or a version skew gives a `.so` that crashes on
-load. While iterating, `cmake --build build --target reload` rebuilds and
-hot-reloads into the running Hyprland.
+Produces `build/omarchy-macos-mission-control.so`. The ABI must match the running Hyprland exactly: build against the same headers, or a version skew gives a `.so` that crashes on load.
+
+## Trackpad and mouse
+
+While it is open, Mission Control takes the trackpad's swipes from the desktop:
+
+- **Three-finger swipe left or right** shows the next or previous desktop, in the direction the desktop swipe uses (`gestures:workspace_swipe_invert`). It stops at the last desktop.
+- **Three-finger swipe down** closes it.
+- **Two-finger scroll** over the windows steps one desktop per stroke, and also stops at the last desktop. A mouse wheel steps one desktop per notch.
+- **Clicking a desktop** in the strip leaves Mission Control for it, as on macOS.
+
+`test/run-input.sh` checks the scrolling and clicking in a nested Hyprland with a virtual pointer. Swipes can't be faked without root, so they are tested by hand.
 
 ## Usage
 
@@ -130,6 +113,8 @@ All keys live under `plugin:mission_control:*`. Colors are `0xAARRGGBB` integers
 | `select_border_size` | int (px) | `3` | Keyboard-selected preview border thickness |
 | `focus_follows_mouse` | bool (0/1) | `1` | Keyboard selection tracks the hovered preview |
 | `scroll_switches_workspace` | bool (0/1) | `1` | Wheel over the main area steps prev/next workspace |
+| `scroll_threshold` | int | `60` | Trackpad scroll distance that steps one desktop; one step per stroke |
+| `swipe_threshold` | int | `60` | Trackpad swipe distance, while open, that steps a desktop or closes |
 | `passthrough_keys` | bool (0/1) | `1` | Let keys the overview doesn't use reach Hyprland (keybinds keep working) |
 | `key_close` | key names | `escape` | Keys that dismiss |
 | `key_next_workspace` | key names | `tab` | Cycle the displayed workspace forward (wraps); `""` to disable. Held modifiers match exactly, so e.g. a `SUPER+Tab` toggle bind still passes through and closes |
@@ -141,11 +126,12 @@ All keys live under `plugin:mission_control:*`. Colors are `0xAARRGGBB` integers
 | `key_all_workspaces` | key names | `a` | Toggle the all-workspaces (expo) view; `""` to disable |
 | `key_workspace` | key names | `1,2,3,4,5,6,7,8,9,0` | Each key switches to the Nth strip card's workspace, for real (slot position = card index) |
 | `exit_on_click` | bool (0/1) | `1` | Click on empty space dismisses the overview |
+| `click_card_closes` | bool (0/1) | `1` | Clicking a desktop in the strip leaves Mission Control for it |
 | `exit_on_switch` | bool (0/1) | `0` | Dismiss when the live workspace changes underneath (e.g. a keybind) |
 | `show_all_workspaces` | bool (0/1) | `0` | Main area shows every window on the monitor (expo), not just the displayed workspace. Toggle live with `mission_control:allworkspaces`, the `key_all_workspaces` key, or the strip's "All" card. Picking a preview here follows it: the overview closes onto that window's workspace |
 | `show_empty` | bool (0/1) | `1` | Keep empty workspaces as strip cards. Has no effect while `dynamic_workspaces` is on (which it is by default) — set that to `0` to get the old always-list-everything strip back |
 | `dynamic_workspaces` | bool (0/1) | `1` | GNOME/hyprnome-style workspaces: only populated workspaces are listed and the strip ends in one empty card (drawn as a workspace, not a `+`). Stepping onto it or dropping a window into it creates it; the *next* empty card only appears once a window actually lands there, so you never see two blank desktops in a row, and emptying it again takes the extra card back away. Workspaces you empty drop off the strip. Forces `show_empty` off. Pair with `autodelete_empty` if you also want workspaces your config pins to be destroyed, not just hidden |
-| `autodelete_empty` | bool (0/1) | `1` | Let Hyprland reap empty workspaces this monitor still pins. Hyprland already destroys unpinned empties on its own, so this only affects ones held by a `persistent:true` rule (and gloview's own abandoned trailing workspace) — the "empty ones get deleted automatically" half of GNOME-style workspaces. **Releasing a persistent workspace lasts until your next config reload — set this to `0` if you keep `persistent:true` workspaces you want left alone.** Skips the displayed workspace, anything visible on any monitor, workspaces holding any window (mapped or not), scratchpads, named workspaces, and other monitors' workspaces |
+| `autodelete_empty` | bool (0/1) | `1` | Let Hyprland reap empty workspaces this monitor still pins. Hyprland already destroys unpinned empties on its own, so this only affects ones held by a `persistent:true` rule (and the overview's own abandoned trailing workspace) — the "empty ones get deleted automatically" half of GNOME-style workspaces. **Releasing a persistent workspace lasts until your next config reload — set this to `0` if you keep `persistent:true` workspaces you want left alone.** Skips the displayed workspace, anything visible on any monitor, workspaces holding any window (mapped or not), scratchpads, named workspaces, and other monitors' workspaces |
 | `show_workspace_labels` | bool (0/1) | `1` | Workspace names above the strip cards. Off frees the label band, so the cards grow into it |
 | `show_window_labels` | bool (0/1) | `1` | Window title pill under a hovered/selected preview |
 | `show_special` | bool (0/1) | `0` | Include the special (scratchpad) workspace as a strip card |
@@ -167,7 +153,7 @@ supersedes the older `bar_position` (top/bottom only); set `anchor` and it wins.
 ```lua
     hl.config({
         plugin = {
-            gloview = {
+            mission_control = {
                 layout         = "rows",
                 gap            = 34,
                 padding        = 80,
@@ -193,8 +179,11 @@ supersedes the older `bar_position` (top/bottom only); set `anchor` and it wins.
 
                 focus_follows_mouse       = 1,
                 scroll_switches_workspace = 1,
+                scroll_threshold          = 60,
+                swipe_threshold           = 60,
                 passthrough_keys          = 1,
                 exit_on_click             = 1,
+                click_card_closes         = 1,
                 exit_on_switch            = 0,
 
                 key_close     = "escape",
@@ -252,7 +241,7 @@ supersedes the older `bar_position` (top/bottom only); set `anchor` and it wins.
 
 ```ini
 plugin {
-    gloview {
+    mission_control {
         layout = rows
         gap = 34
         padding = 80
@@ -278,8 +267,11 @@ plugin {
 
         focus_follows_mouse       = 1
         scroll_switches_workspace = 1
+        scroll_threshold          = 60
+        swipe_threshold           = 60
         passthrough_keys          = 1
         exit_on_click             = 1
+        click_card_closes         = 1
         exit_on_switch            = 0
 
         key_close     = escape
@@ -331,26 +323,3 @@ plugin {
     }
 }
 ```
-
-## Contribute
-
-If you want to contribute, you can check out the feature requests by users in the Discussions tab, or implement your own feature
-
-It will be merged if it builds and fits. If you aren't sure, you can contact me (see below)
-
-AI code is allowed if it's submitted and tested by a human
-
-## Donate
-
-#### XMR:
-`42uxSBp4aMyTAsPCMGEwHvJyGpemr1c7kdjtFsD5tnEsU7XsnYMjseyXBzLWHkruSWFGbQWagsh31bBRdU7vDNUBAzm1Mo4`  
-
-#### BTC:
-`bc1p2xkwf9elq8wgajtq2cc6zthuh4k998tgnk6365cnjqgal7mpd09q4jtfq8`
-
-#### ETH (ERC-20):
-`0xBD636eBD3a6b9F046930101657459E90DA370e81`  
-
----
-
-Email [root@feds.farm](mailto:root@feds.farm) or DM [@root:feds.farm](https://escape.feds.farm/#@root:feds.farm) on Matrix if you want your donation to be visible
