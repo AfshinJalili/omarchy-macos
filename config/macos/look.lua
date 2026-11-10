@@ -29,3 +29,13 @@ hl.config({
     },
   },
 })
+
+-- Frosted glass behind Omarchy's menus and pop-ups, and omacast's launcher,
+-- like macOS menus and Spotlight. Omarchy's Glassy windows toggle does this
+-- too, but also makes every window see-through. ignore_alpha keeps the faint
+-- full-screen scrim behind a menu unblurred, so only the card is frosted.
+hl.layer_rule({
+  match = { namespace = "^(omarchy-menu|omarchy-notifications|omarchy-osd|omarchy-polkit|omarchy-reminders|omarchy-clipboard|omarchy-emojis|omarchy-keyboard-panel|omarchy-network-qr|omacast)$" },
+  blur = true,
+  ignore_alpha = 0.3,
+})

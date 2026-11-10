@@ -6,7 +6,7 @@ macOS on [Omarchy](https://omarchy.org): titlebars with traffic lights, Mission 
 
 | Setting | What it does |
 |---|---|
-| `look` | Rounded corners, soft shadows, blur and thin borders |
+| `look` | Rounded corners, soft shadows, blur and thin borders, and frosted glass behind Omarchy's menus and pop-ups |
 | `motion` | Windows zoom in softly and desktops slide sideways |
 | `cursor` | The WhiteSur cursor, when it is installed in `~/.local/share/icons` |
 | `spotlight` | Super + Space searches apps. The Omarchy menu moves to Super + Alt + Space |
