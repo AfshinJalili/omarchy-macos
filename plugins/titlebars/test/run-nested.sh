@@ -5,16 +5,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCALE="${1:-1}"
 OUT="${2:-$ROOT/test/shot-$SCALE.png}"
-before=$(ls "$XDG_RUNTIME_DIR"/hypr 2>/dev/null | sort)
-sockets_before=$(cd "$XDG_RUNTIME_DIR" && ls -d wayland-* 2>/dev/null | grep -v lock | sort)
-HYPRBARS_ROOT="$ROOT" HYPRBARS_SCALE="$SCALE" HYPRBARS_LAYOUT="${HYPRBARS_LAYOUT:-}" Hyprland -c "$ROOT/test/nested.lua" >"$ROOT/test/nested.log" 2>&1 &
-pid=$!
-trap 'kill $pid 2>/dev/null || true' EXIT
-sleep 4
-sig=$(comm -13 <(echo "$before") <(ls "$XDG_RUNTIME_DIR"/hypr | sort) | head -1)
-socket=$(comm -13 <(echo "$sockets_before") <(cd "$XDG_RUNTIME_DIR" && ls -d wayland-* | grep -v lock | sort) | head -1)
-# Never fall back to the host display: a wrong socket would capture the real desktop.
-[[ -n $socket && $socket != "$WAYLAND_DISPLAY" ]] || { echo "nested socket not found" >&2; exit 1; }
+source "$ROOT/../../tools/nested.sh"
+NESTED_LOG="$ROOT/test/nested.log" nested_start "$ROOT/test/nested.lua" HYPRBARS_ROOT="$ROOT" HYPRBARS_SCALE="$SCALE" HYPRBARS_LAYOUT="${HYPRBARS_LAYOUT:-}"
+sig="$NESTED_SIG" socket="$NESTED_SOCKET" pid="$NESTED_PID"
 echo "instance=$sig socket=$socket"
 HYPRLAND_INSTANCE_SIGNATURE="$sig" hyprctl configerrors || true
 HYPRLAND_INSTANCE_SIGNATURE="$sig" hyprctl clients -j | jq -c '.[] | {title, at, size}' || true

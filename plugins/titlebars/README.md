@@ -55,7 +55,6 @@ Plugin-owned C++ symbols have an `OmarchyFloating` prefix and the library is bui
 
 ## Layout
 
-The plugin source sits at the top level and builds with CMake. `tools/verify.py` is a nested-compositor verifier, with `pointer.c` and the wlr virtual pointer protocol it uses to drive real pointer input; it is not part of the build.
 
 ## Building
 
@@ -71,7 +70,6 @@ To release, tag the commit `vX.Y.Z` and push the tag. omarchy-pkgs builds the pa
 ## Verifying
 
 ```bash
-python3 tools/verify.py build/titlebars.so
 ```
 
 The verifier needs a running Hyprland session with exactly one Hyprland instance, plus `foot`, `grim`, `wayland-scanner`, and a C compiler. It starts a disposable nested Hyprland with its own runtime directory and never loads the candidate library into the parent compositor. It checks repeated load/reload/unload, interleaved with the Windows XP fork when `/usr/lib/omarchy-windows-xp/hyprbars.so` is installed, and that a loaded plugin the config no longer configures reserves no titlebar space. It then exercises real pointer titlebar dragging to the screen edges without snapping, double-click maximize, and restoring a maximized window by dragging its titlebar. A two-window regression check deliberately delays button and double-click commands and changes focus before they run, to verify that actions keep the clicked window as their target. A final check confirms that `workspace_tag`-scoped titlebars release their space immediately when a window is tiled or untagged.

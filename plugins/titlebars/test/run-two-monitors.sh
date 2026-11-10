@@ -3,16 +3,9 @@
 # screenshots its titlebar on each, to check the title keeps its size.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-before=$(ls "$XDG_RUNTIME_DIR"/hypr | sort)
-sockets_before=$(cd "$XDG_RUNTIME_DIR" && ls -d wayland-* 2>/dev/null | grep -v lock | sort)
-HYPRBARS_ROOT="$ROOT" HYPRBARS_SCALE=1 Hyprland -c "$ROOT/test/nested.lua" >"$ROOT/test/nested.log" 2>&1 &
-pid=$!
-trap 'kill $pid 2>/dev/null || true' EXIT
-sleep 4
-sig=$(comm -13 <(echo "$before") <(ls "$XDG_RUNTIME_DIR"/hypr | sort) | head -1)
-socket=$(comm -13 <(echo "$sockets_before") <(cd "$XDG_RUNTIME_DIR" && ls -d wayland-* | grep -v lock | sort) | head -1)
-[[ -n $socket && $socket != "$WAYLAND_DISPLAY" ]] || { echo "nested socket not found" >&2; exit 1; }
-export HYPRLAND_INSTANCE_SIGNATURE="$sig"
+source "$ROOT/../../tools/nested.sh"
+NESTED_LOG="$ROOT/test/nested.log" nested_start "$ROOT/test/nested.lua" HYPRBARS_ROOT="$ROOT" HYPRBARS_SCALE=1
+sig="$NESTED_SIG" socket="$NESTED_SOCKET" pid="$NESTED_PID"
 hyprctl output create wayland >/dev/null; sleep 2
 second=$(hyprctl monitors -j | jq -r '.[] | select(.name != "WAYLAND-1") | .name' | head -1)
 hyprctl eval "hl.monitor({ output = \"$second\", mode = \"preferred\", position = \"auto-right\", scale = \"2\" })" >/dev/null; sleep 1

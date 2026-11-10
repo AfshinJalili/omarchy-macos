@@ -4,12 +4,9 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ ${1:-} == reverse ]] && touch "$ROOT/test/.swap" || rm -f "$ROOT/test/.swap"
-before=$(ls "$XDG_RUNTIME_DIR"/hypr | sort)
-HYPRBARS_ROOT="$ROOT" Hyprland -c "$ROOT/test/swap.lua" >"$ROOT/test/swap.log" 2>&1 &
-pid=$!
-sleep 4
-sig=$(comm -13 <(echo "$before") <(ls "$XDG_RUNTIME_DIR"/hypr | sort) | head -1)
-export HYPRLAND_INSTANCE_SIGNATURE="$sig"
+source "$ROOT/../../tools/nested.sh"
+NESTED_LOG="$ROOT/test/swap.log" nested_start "$ROOT/test/swap.lua" HYPRBARS_ROOT="$ROOT"
+sig="$NESTED_SIG" socket="$NESTED_SOCKET" pid="$NESTED_PID"
 sleep 2; echo "before: $(hyprctl plugin list -j | jq -c "[.[] | .version]")"
 [[ ${1:-} == reverse ]] && rm -f "$ROOT/test/.swap" || touch "$ROOT/test/.swap"
 hyprctl reload >/dev/null; sleep 3
