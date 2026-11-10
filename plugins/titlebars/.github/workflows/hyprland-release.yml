@@ -1,0 +1,78 @@
+name: Hyprland release
+
+# Daily: when Hyprland publishes a release hyprpm.toml does not pin yet, build
+# main against it. If it builds, pin that release to main's commit, tag the
+# commit hl<version>, and point CI at it. If it does not, open an issue so the
+# code can be ported.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install git
+        run: pacman -Syu --noconfirm --needed git github-cli
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Find the latest Hyprland release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api repos/hyprwm/Hyprland/releases/latest --jq .tag_name)
+          commit=$(gh api "repos/hyprwm/Hyprland/commits/$tag" --jq .sha)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          if grep -q "\"$commit\"" hyprpm.toml; then
+            echo "pinned=true" >> "$GITHUB_OUTPUT"
+            echo "$tag is already pinned"
+          fi
+      - name: Install Arch packages
+        if: steps.release.outputs.pinned != 'true'
+        run: pacman -S --noconfirm --needed $(grep -v '^#' ci/arch-deps.txt)
+      - name: Build main against it
+        if: steps.release.outputs.pinned != 'true'
+        id: build
+        continue-on-error: true
+        run: |
+          ci/hyprland-headers.sh "${{ steps.release.outputs.tag }}" /opt/hyprland
+          export PKG_CONFIG_PATH=/opt/hyprland/lib/pkgconfig:/opt/hyprland/share/pkgconfig
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)"
+      - name: Pin and tag
+        if: steps.release.outputs.pinned != 'true' && steps.build.outcome == 'success'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          code=$(git rev-parse HEAD)
+          version="${TAG#v}"
+          sed -i "/^commit_pins = \[/a\    [\"$COMMIT\", \"$code\"], # $version" hyprpm.toml
+          echo "$TAG" > ci/hyprland-version
+          git tag -a "hl$version" "$code" -m "Built against Hyprland $version"
+          git commit -am "Pin Hyprland $version to $(git rev-parse --short "$code")"
+          git push origin main "hl$version"
+      - name: Report a failed build
+        if: steps.release.outputs.pinned != 'true' && steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          title="Build fails against Hyprland $TAG"
+          if ! gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq '.[0].number' | grep -q .; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+              --body "The daily check could not build main against Hyprland $TAG. Port the code, then pin the release in hyprpm.toml. Log: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi

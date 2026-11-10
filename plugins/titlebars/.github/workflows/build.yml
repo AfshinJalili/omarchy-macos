@@ -1,0 +1,39 @@
+name: Build
+
+# Compiles the plugin against the Hyprland release this branch targets
+# (ci/hyprland-version), with the exact hyprwm libraries that release pins.
+on:
+  push:
+    branches: [main, hyprland-0.56]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed git
+      - uses: actions/checkout@v4
+      - name: Install Arch packages
+        run: pacman -S --noconfirm --needed $(grep -v '^#' ci/arch-deps.txt)
+      - name: Read target Hyprland
+        id: target
+        run: echo "tag=$(cat ci/hyprland-version)" >> "$GITHUB_OUTPUT"
+      - name: Cache Hyprland headers
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/hyprland
+          key: hyprland-${{ steps.target.outputs.tag }}-${{ hashFiles('ci/hyprland-headers.sh', 'ci/arch-deps.txt') }}
+      - name: Build Hyprland headers
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: ci/hyprland-headers.sh "${{ steps.target.outputs.tag }}" /opt/hyprland
+      - name: Build plugin
+        run: |
+          export PKG_CONFIG_PATH=/opt/hyprland/lib/pkgconfig:/opt/hyprland/share/pkgconfig
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)"
+          test -f build/hyprbars-macos.so
