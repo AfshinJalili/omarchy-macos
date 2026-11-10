@@ -3,3 +3,4 @@ result
 result-*
 .direnv/
 compile_commands.json
+test/*.log

@@ -33,6 +33,7 @@
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Context.hpp>
+#include <hyprland/src/config/ConfigValue.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/render/WindowRenderPresentation.hpp>
 #include <hyprland/src/render/Texture.hpp>
@@ -594,6 +595,18 @@ bool Overview::initialize() {
     });
     m_mouseAxisL = events.input.mouse.axis.listen([this](const IPointer::SAxisEvent& event, Event::SCallbackInfo& info) {
         if (onMouseAxis(event))
+            info.cancelled = true;
+    });
+    m_swipeBeginL = events.gesture.swipe.begin.listen([this](const IPointer::SSwipeBeginEvent&, Event::SCallbackInfo& info) {
+        if (onSwipeBegin())
+            info.cancelled = true;
+    });
+    m_swipeUpdateL = events.gesture.swipe.update.listen([this](const IPointer::SSwipeUpdateEvent& event, Event::SCallbackInfo& info) {
+        if (onSwipeUpdate(event))
+            info.cancelled = true;
+    });
+    m_swipeEndL = events.gesture.swipe.end.listen([this](const IPointer::SSwipeEndEvent&, Event::SCallbackInfo& info) {
+        if (onSwipeEnd())
             info.cancelled = true;
     });
     m_mouseMoveL = events.input.mouse.move.listen([this](const Vector2D&, Event::SCallbackInfo&) { onMouseMove(); });
@@ -2550,8 +2563,13 @@ bool Overview::onMouseAxis(const IPointer::SAxisEvent& e) {
     }
 
     if (!overStrip && cfgInt("plugin:mission_control:scroll_switches_workspace", 1) != 0) {
-        if (notches != 0.0)
-            stepWorkspace(notches > 0 ? 1 : -1);
+        // A wheel steps once per notch. A trackpad sends a stream of small deltas, which
+        // stepped once per event and raced through the workspaces.
+        if (e.source == WL_POINTER_AXIS_SOURCE_WHEEL || e.deltaDiscrete != 0) {
+            if (notches != 0.0)
+                stepWorkspace(notches > 0 ? 1 : -1);
+        } else
+            onTrackpadScroll(e);
         return true;
     }
 
@@ -2563,6 +2581,63 @@ bool Overview::onMouseAxis(const IPointer::SAxisEvent& e) {
     updateHover(); // the card under the cursor changed
     damage();
     return true;
+}
+
+// Two-finger scroll over the main area: one workspace per stroke, once the fingers have
+// moved scroll_threshold. The stroke ends at the zero-delta stop libinput sends when the
+// fingers lift, or after a pause for devices that send none. No wrap-around, as with swipes.
+void Overview::onTrackpadScroll(const IPointer::SAxisEvent& e) {
+    const bool newStroke = e.timeMs - m_scrollLastMs > 250;
+    m_scrollLastMs       = e.timeMs;
+    if (e.delta == 0.0 || newStroke) {
+        m_scrollAccum[0] = m_scrollAccum[1] = 0.0;
+        m_scrollDone                        = false;
+        if (e.delta == 0.0)
+            return;
+    }
+    if (m_scrollDone)
+        return;
+    double& accum = m_scrollAccum[e.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? 1 : 0];
+    accum += e.delta;
+    if (std::abs(accum) < std::max(1, cfgInt("plugin:mission_control:scroll_threshold", 60)))
+        return;
+    m_scrollDone = true;
+    stepWorkspace(accum > 0 ? 1 : -1, false);
+}
+
+bool Overview::onSwipeBegin() {
+    m_swipeOwned = m_active;
+    m_swipeDone  = false;
+    m_swipeDelta = {};
+    return m_swipeOwned;
+}
+
+bool Overview::onSwipeUpdate(const IPointer::SSwipeUpdateEvent& e) {
+    if (!m_swipeOwned)
+        return false;
+    if (m_swipeDone)
+        return true;
+    m_swipeDelta += e.delta;
+    const double ax = std::abs(m_swipeDelta.x);
+    const double ay = std::abs(m_swipeDelta.y);
+    if (std::max(ax, ay) < std::max(1, cfgInt("plugin:mission_control:swipe_threshold", 60)))
+        return true;
+    m_swipeDone = true;
+    if (ax >= ay) {
+        // Same direction as the desktop's workspace swipe: with workspace_swipe_invert (the
+        // default) fingers moving left bring in the workspace on the right.
+        static auto PINVERT = CConfigValue<Config::INTEGER>("gestures:workspace_swipe_invert");
+        const bool  left    = m_swipeDelta.x < 0;
+        stepWorkspace((left == (*PINVERT != 0)) ? 1 : -1, false);
+    } else if (m_swipeDelta.y > 0)
+        close();
+    return true;
+}
+
+bool Overview::onSwipeEnd() {
+    const bool owned = m_swipeOwned;
+    m_swipeOwned     = false;
+    return owned;
 }
 
 void Overview::onMouseMove() {
@@ -2656,6 +2731,7 @@ bool Overview::onMouseButton(const IPointer::SButtonEvent& e) {
     if (e.state == WL_POINTER_BUTTON_STATE_PRESSED) {
         m_pressTile = PRESS_NONE;
         m_dragging  = false;
+        m_pressCardCloses = false;
 
         // middle-click a workspace card → close every window on it (handled fully on
         // press). Per-window close is keyboard-only now (key_close_window, see onKey).
@@ -2693,8 +2769,11 @@ bool Overview::onMouseButton(const IPointer::SButtonEvent& e) {
                     toggleAllWorkspaces();
                 else if (m_strip[i].isPlus)
                     addWorkspace(m_strip[i].id); // 0 for the plain "+"; the advertised id for the dynamic tail
-                else
+                else {
                     switchToWorkspace(m_strip[i]);
+                    // As on macOS, clicking a desktop in the strip also leaves for it, on release.
+                    m_pressCardCloses = cfgInt("plugin:mission_control:click_card_closes", 1) != 0;
+                }
                 return true;
             }
         }
@@ -2726,6 +2805,11 @@ bool Overview::onMouseButton(const IPointer::SButtonEvent& e) {
     const LRect draggedBox = (m_dragging && press >= 0 && press < static_cast<int>(m_tiles.size())) ? tileContentBox(static_cast<size_t>(press), dragBox()) : LRect{};
     m_pressTile            = PRESS_NONE;
 
+    if (press == PRESS_STRIP && m_pressCardCloses) {
+        m_pressCardCloses = false;
+        close();
+        return true;
+    }
     if (press == PRESS_STRIP || press == PRESS_CONSUMED)
         return true; // switch / ✕ already handled on press; ignore the release
 
@@ -3542,7 +3626,7 @@ void Overview::syncTiles() {
 }
 
 // Scroll wheel over the main area: show the previous/next workspace card (wraps).
-void Overview::stepWorkspace(int dir) {
+void Overview::stepWorkspace(int dir, bool wrap) {
     if (m_strip.empty())
         return;
     // collect only the real workspace cards (skip the "+" and the optional "All" card),
@@ -3554,6 +3638,10 @@ void Overview::stepWorkspace(int dir) {
     for (size_t i = 0; i < m_strip.size(); ++i) {
         if ((m_strip[i].isPlus && !m_strip[i].isNew) || m_strip[i].isAll)
             continue;
+        // Swipes and trackpad strokes stop at the last desktop, as on macOS: only the wheel
+        // and the keys go on to the empty one that creates a new desktop.
+        if (!wrap && m_strip[i].isNew && !m_strip[i].active)
+            continue;
         if (m_strip[i].active)
             activePos = static_cast<int>(real.size());
         real.push_back(static_cast<int>(i));
@@ -3563,6 +3651,8 @@ void Overview::stepWorkspace(int dir) {
     if (activePos < 0)
         activePos = 0;
     int next = activePos + (dir > 0 ? 1 : -1);
+    if (!wrap && (next < 0 || next >= static_cast<int>(real.size())))
+        return;
     if (next < 0)
         next = static_cast<int>(real.size()) - 1; // wrap to last
     else if (next >= static_cast<int>(real.size()))
