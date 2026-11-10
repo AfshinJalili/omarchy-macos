@@ -1,0 +1,43 @@
+#pragma once
+
+#include <vector>
+
+// Pure, Hyprland-independent layout math for the overview. Everything here is
+// plain geometry in monitor-local logical pixels so it can be unit-reasoned and
+// tweaked without touching the renderer. Add a new engine by extending
+// `Engine` and `computeLayout`.
+
+namespace gloview {
+
+struct LRect {
+    double x = 0.0, y = 0.0, w = 0.0, h = 0.0;
+
+    [[nodiscard]] double cx() const { return x + w / 2.0; }
+    [[nodiscard]] double cy() const { return y + h / 2.0; }
+    [[nodiscard]] double aspect() const { return h > 0.0 ? w / h : 1.0; }
+};
+
+enum class Engine {
+    Rows,    // macOS-like: aspect-preserving, packed into balanced rows
+    Grid,    // uniform cells, aspect-preserving inside each
+    Natural, // keep relative on-screen position, uniformly scaled to fit
+};
+
+struct LayoutCfg {
+    Engine engine    = Engine::Rows;
+    double padTop    = 60.0; // space already reserved above (e.g. strip) is added by caller
+    double padRight  = 80.0;
+    double padBottom = 70.0;
+    double padLeft   = 80.0;
+    double gap       = 36.0;  // min spacing between tiles
+    double maxScale  = 1.0;   // never blow a window up past this * its real size
+};
+
+// `naturals` are the windows' real monitor-local rects; result is parallel,
+// each entry the tile's target rect inside `area`. `area` is the full usable
+// region (caller passes the monitor box; paddings are applied internally).
+std::vector<LRect> computeLayout(const std::vector<LRect>& naturals, const LRect& area, const LayoutCfg& cfg);
+
+Engine parseEngine(const char* s);
+
+} // namespace gloview
