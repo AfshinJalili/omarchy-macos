@@ -40,15 +40,17 @@ jobs:
       - name: Install Arch packages
         if: steps.release.outputs.pinned != 'true'
         run: pacman -S --noconfirm --needed $(grep -v '^#' ci/arch-deps.txt)
-      - name: Build main against it
+      - name: Build main's plugins against it
         if: steps.release.outputs.pinned != 'true'
         id: build
         continue-on-error: true
         run: |
           ci/hyprland-headers.sh "${{ steps.release.outputs.tag }}" /opt/hyprland
           export PKG_CONFIG_PATH=/opt/hyprland/lib/pkgconfig:/opt/hyprland/share/pkgconfig
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build -j"$(nproc)"
+          for plugin in titlebars mission-control; do
+            cmake -S "plugins/$plugin" -B "build/$plugin" -DCMAKE_BUILD_TYPE=Release
+            cmake --build "build/$plugin" -j"$(nproc)"
+          done
       - name: Pin and tag
         if: steps.release.outputs.pinned != 'true' && steps.build.outcome == 'success'
         env:

@@ -1,6 +1,6 @@
 name: Build
 
-# Compiles the plugin against the Hyprland release this branch targets
+# Compiles both plugins against the Hyprland release this branch targets
 # (ci/hyprland-version), with the exact hyprwm libraries that release pins.
 on:
   push:
@@ -31,9 +31,11 @@ jobs:
       - name: Build Hyprland headers
         if: steps.cache.outputs.cache-hit != 'true'
         run: ci/hyprland-headers.sh "${{ steps.target.outputs.tag }}" /opt/hyprland
-      - name: Build plugin
+      - name: Build plugins
         run: |
           export PKG_CONFIG_PATH=/opt/hyprland/lib/pkgconfig:/opt/hyprland/share/pkgconfig
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build -j"$(nproc)"
-          test -f build/hyprbars-macos.so
+          for plugin in titlebars mission-control; do
+            cmake -S "plugins/$plugin" -B "build/$plugin" -DCMAKE_BUILD_TYPE=Release
+            cmake --build "build/$plugin" -j"$(nproc)"
+            test -f "build/$plugin/omarchy-macos-$plugin.so"
+          done

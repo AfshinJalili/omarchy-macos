@@ -1,13 +1,13 @@
 -- macOS trackpad gestures for Omarchy.
--- https://github.com/AfshinJalili/omarchy-macos-gestures
---
--- Installed by install.sh as ~/.config/hypr/macos/gestures.lua and loaded from
--- ~/.config/hypr/macos.lua with require("hypr.macos.gestures").
+
+local plugin = require("hypr.macos.plugin")
+local options = require("hypr.macos.options")
 
 -- macOS: Accessibility > Pointer Control > Trackpad Options > Dragging style.
--- Turning on three-finger drag moves every swipe below to four fingers, as it
--- does on macOS, because libinput gives three-finger movement to the drag.
-local THREE_FINGER_DRAG = false
+-- Turning on three-finger drag (three_finger_drag in settings.lua) moves every
+-- swipe below to four fingers, as it does on macOS, because libinput gives
+-- three-finger movement to the drag.
+local THREE_FINGER_DRAG = options.three_finger_drag == true
 
 local SWIPE = THREE_FINGER_DRAG and 4 or 3
 
@@ -19,14 +19,15 @@ local function run(command)
   end
 end
 
--- Mission Control comes from the gloview plugin (hypr.macos.gloview). Looked up
--- when the swipe ends, so the gesture does nothing while gloview isn't loaded.
--- open and close are safe to repeat, so the swipe needn't know if it is open.
+-- Mission Control comes from its plugin (hypr.macos.mission_control). Looked up
+-- when the swipe ends, so the gesture does nothing while it isn't loaded. open
+-- and close are safe to repeat, so the swipe needn't know if it is open. While
+-- Mission Control is open, it takes the swipes itself.
 local function mission_control(action)
   return function()
-    local gloview = hl.plugin.gloview
-    if gloview and gloview[action] then
-      gloview[action]()
+    local api = plugin.mission_control()
+    if api and api[action] then
+      api[action]()
     end
   end
 end
