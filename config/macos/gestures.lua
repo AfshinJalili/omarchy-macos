@@ -70,8 +70,14 @@ hl.gesture({ fingers = SWIPE, direction = "horizontal", action = "workspace" })
 hl.gesture({ fingers = SWIPE, direction = "up", action = mission_control("open") })
 hl.gesture({ fingers = SWIPE, direction = "down", action = mission_control("close") })
 
--- Pinch with thumb and three fingers: Launchpad.
-hl.gesture({ fingers = 4, direction = "pinchin", action = run("omarchy-menu toggle apps") })
+-- Pinch with thumb and three fingers: Launchpad. With omacast installed (a
+-- Raycast-style launcher, https://github.com/typecraft-dev/oma-cast) it opens
+-- that, through its global shortcut; otherwise Omarchy's app launcher.
+local OMACAST = (os.getenv("HOME") or "") .. "/.config/omarchy/plugins/typecraft.omacast/manifest.json"
+local launchpad = plugin.installed(OMACAST)
+    and function() hl.dispatch(hl.dsp.global("omacast:toggle")) end
+  or run("omarchy-menu toggle apps")
+hl.gesture({ fingers = 4, direction = "pinchin", action = launchpad })
 
 -- Spread thumb and three fingers: Show Desktop; spread again to come back.
 hl.gesture({ fingers = 4, direction = "pinchout", action = show_desktop })

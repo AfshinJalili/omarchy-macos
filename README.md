@@ -20,7 +20,7 @@ macOS on [Omarchy](https://omarchy.org): titlebars with traffic lights, Mission 
 | 3 fingers left / right | Switch desktops, following your fingers |
 | 3 fingers up | Mission Control |
 | 3 fingers down | Close Mission Control (Esc or a click on empty space also close it) |
-| Pinch in, 4 fingers | Launchpad (Omarchy's app launcher) |
+| Pinch in, 4 fingers | Launchpad: [omacast](https://github.com/typecraft-dev/oma-cast) when it is installed, otherwise Omarchy's app launcher |
 | Spread out, 4 fingers | Show Desktop: an empty desktop on this monitor. Spread again to come back |
 
 In Mission Control, swipe left or right with three fingers, or scroll with two, to move between desktops; click a desktop in the strip to go to it.
