@@ -257,7 +257,7 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
   HyprlandAPI::reloadConfig();
 
   // The name stays "hyprbars" so configs written for hyprbars and Omarchy keep working.
-  return {"hyprbars", "macOS-style title bars with traffic lights (hyprbars-macos).", "Vaxry, Omarchy, hyprbars-macos", "macos-0.1.2"};
+  return {"hyprbars", "macOS-style title bars with traffic lights (omarchy-macos).", "Vaxry, Omarchy, Afshin Jalili", "macos-0.1.2"};
 }
 
 static void exitOmarchyFloating() {

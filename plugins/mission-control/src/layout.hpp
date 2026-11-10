@@ -7,7 +7,7 @@
 // tweaked without touching the renderer. Add a new engine by extending
 // `Engine` and `computeLayout`.
 
-namespace gloview {
+namespace missioncontrol {
 
 struct LRect {
     double x = 0.0, y = 0.0, w = 0.0, h = 0.0;
@@ -40,4 +40,4 @@ std::vector<LRect> computeLayout(const std::vector<LRect>& naturals, const LRect
 
 Engine parseEngine(const char* s);
 
-} // namespace gloview
+} // namespace missioncontrol

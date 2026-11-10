@@ -48,7 +48,7 @@
 
 using Render::GL::g_pHyprOpenGL;
 
-namespace gloview {
+namespace missioncontrol {
 
 namespace {
 // 0.57 moved persistence onto CRegularWorkspace; special workspaces can't be pinned.
@@ -63,7 +63,7 @@ bool isPersistent(const PHLWORKSPACE& ws) {
 }
 
 // 0.57 made workspace ids a variant and dropped the negative ids for special/named
-// workspaces. gloview only lists and steps NUMBERED workspaces, so 0 means "not numbered"
+// workspaces. Mission Control only lists and steps NUMBERED workspaces, so 0 means "not numbered"
 // and every old `m_id <= 0` guard keeps its meaning.
 int wsId(const PHLWORKSPACE& ws) {
     const auto id = ws ? ws->numberedID() : std::nullopt;
@@ -134,7 +134,7 @@ CBox box(const LRect& r) {
 // Hyprland's immediate-mode renderRect/renderTexture/renderRoundedShadow feed the box
 // STRAIGHT to projectBoxToTarget, which expects transformed monitor-PIXEL coordinates and
 // applies NO monitor scale itself (verified against Renderer.cpp: clipBox/scaledWindowBox are
-// pre-.scale(m_scale)'d before applyToBox). All gloview chrome is authored in monitor-LOGICAL
+// pre-.scale(m_scale)'d before applyToBox). All Mission Control chrome is authored in monitor-LOGICAL
 // pixels, so it MUST be pre-scaled by mon->m_scale before drawing — otherwise on any monitor
 // with scale != 1 (HiDPI / fractional like 1.2) the whole chrome renders at 1/scale size and
 // top-left-biased, while the live window surfaces (renderWindowLive, which converts to pixels
@@ -530,7 +530,7 @@ class COverlayPass final : public IPassElement {
     // whole monitor every frame anyway, so there is nothing useful for simplify() to cull.
     bool                disableSimplification(Render::CRenderContext& ctx) override { return true; }
     bool                undiscardable(Render::CRenderContext& ctx) override { return true; }
-    const char*         passName() override { return "GloviewOverlayPass"; }
+    const char*         passName() override { return "MissionControlOverlayPass"; }
     ePassElementType    type() override { return EK_CUSTOM; }
     std::optional<CBox> boundingBox(Render::CRenderContext& ctx) override {
         const auto m = m_owner ? m_owner->monitor() : nullptr;
@@ -623,26 +623,26 @@ bool Overview::initialize() {
             addrAny = mt.address; // (window)
     }
     if (!addr) {
-        HyprlandAPI::addNotification(m_handle, "[gloview] could not find shouldRenderWindow to hook", CHyprColor(1.0, 0.2, 0.2, 1.0), 6000);
+        HyprlandAPI::addNotification(m_handle, "[mission-control] could not find shouldRenderWindow to hook", CHyprColor(1.0, 0.2, 0.2, 1.0), 6000);
         return false;
     }
     if (!addrAny) {
-        HyprlandAPI::addNotification(m_handle, "[gloview] could not find shouldRenderWindow(window) to hook", CHyprColor(1.0, 0.2, 0.2, 1.0), 6000);
+        HyprlandAPI::addNotification(m_handle, "[mission-control] could not find shouldRenderWindow(window) to hook", CHyprColor(1.0, 0.2, 0.2, 1.0), 6000);
         return false;
     }
     m_shouldRenderHook = HyprlandAPI::createFunctionHook(m_handle, addr, reinterpret_cast<void*>(&hkShouldRenderWindow));
     if (!m_shouldRenderHook || !m_shouldRenderHook->hook()) {
-        // Most common cause: ANOTHER gloview instance already holds this hook (e.g. the
+        // Most common cause: ANOTHER Mission Control instance already holds this hook (e.g. the
         // hyprpm-installed copy autoloaded at session start while the dev `reload` target
         // loads the build path) — Hyprland can't trampoline an already-hooked prologue.
-        HyprlandAPI::addNotification(m_handle, "[gloview] failed to hook shouldRenderWindow — is another gloview instance loaded (hyprpm)?", CHyprColor(1.0, 0.2, 0.2, 1.0), 6000);
+        HyprlandAPI::addNotification(m_handle, "[mission-control] failed to hook shouldRenderWindow — is another Mission Control instance loaded (hyprpm)?", CHyprColor(1.0, 0.2, 0.2, 1.0), 6000);
         return false;
     }
     g_shouldRenderOrig = reinterpret_cast<PSHOULDRENDER>(m_shouldRenderHook->m_original);
 
     m_shouldRenderWindowHook = HyprlandAPI::createFunctionHook(m_handle, addrAny, reinterpret_cast<void*>(&hkShouldRenderWindowAny));
     if (!m_shouldRenderWindowHook || !m_shouldRenderWindowHook->hook()) {
-        HyprlandAPI::addNotification(m_handle, "[gloview] failed to hook shouldRenderWindow(window)", CHyprColor(1.0, 0.2, 0.2, 1.0), 6000);
+        HyprlandAPI::addNotification(m_handle, "[mission-control] failed to hook shouldRenderWindow(window)", CHyprColor(1.0, 0.2, 0.2, 1.0), 6000);
         if (m_shouldRenderWindowHook) {
             HyprlandAPI::removeFunctionHook(m_handle, m_shouldRenderWindowHook);
             m_shouldRenderWindowHook = nullptr;
@@ -681,9 +681,9 @@ std::string Overview::cfgStr(const char* name, const char* fallback) const {
 }
 
 Overview::Anchor Overview::stripAnchor() const {
-    std::string a = cfgStr("plugin:gloview:anchor", "");
+    std::string a = cfgStr("plugin:mission_control:anchor", "");
     if (a.empty()) // back-compat: the old top|bottom knob
-        a = cfgStr("plugin:gloview:bar_position", "top");
+        a = cfgStr("plugin:mission_control:bar_position", "top");
     if (a == "bottom")
         return Anchor::Bottom;
     if (a == "left")
@@ -699,11 +699,11 @@ bool Overview::stripHorizontal() const {
 }
 
 bool Overview::showWorkspaceLabels() const {
-    return cfgInt("plugin:gloview:show_workspace_labels", 1) != 0;
+    return cfgInt("plugin:mission_control:show_workspace_labels", 1) != 0;
 }
 
 bool Overview::showWindowLabels() const {
-    return cfgInt("plugin:gloview:show_window_labels", 1) != 0;
+    return cfgInt("plugin:mission_control:show_window_labels", 1) != 0;
 }
 
 // Band reserved above every card for its name. With workspace labels off it collapses to 0
@@ -725,23 +725,23 @@ double Overview::stripLabelH() const {
 // always ends in ONE empty workspace. Moving a window there materialises it and a fresh
 // empty tail appears; workspaces emptied this way stop being listed and Hyprland reaps them.
 bool Overview::dynamicWorkspaces() const {
-    return cfgInt("plugin:gloview:dynamic_workspaces", 1) != 0;
+    return cfgInt("plugin:mission_control:dynamic_workspaces", 1) != 0;
 }
 
-// plugin:gloview:autodelete_empty — the "empty ones automatically get deleted" half of
+// plugin:mission_control:autodelete_empty — the "empty ones automatically get deleted" half of
 // GNOME-style workspaces.
 //
 // Hyprland already destroys a plain empty workspace by itself the moment nothing holds a
 // strong ref to it (that is exactly why addWorkspace has to pin its fresh card persistent to
 // keep it alive at all). So there is nothing here to "delete": what actually lingers is
 // workspaces something still pins — a `persistent:true` rule from the user's config, or
-// gloview's own held tail. Dropping that pin lets the normal reaping take them.
+// Mission Control's own held tail. Dropping that pin lets the normal reaping take them.
 //
 // On by default, but note the one lasting effect: releasing a config-declared persistent
 // workspace is not undone until the next config reload. Set autodelete_empty = 0 to keep
 // `persistent:true` workspaces pinned.
 void Overview::autodeleteEmpty() {
-    if (cfgInt("plugin:gloview:autodelete_empty", 1) == 0)
+    if (cfgInt("plugin:mission_control:autodelete_empty", 1) == 0)
         return;
     const auto m = m_monitor.lock();
     if (!m)
@@ -823,7 +823,7 @@ double Overview::stripThickness() const {
     // clamp against the axis perpendicular to the band: height for a horizontal
     // strip, width for a vertical one.
     const double cross = stripHorizontal() ? m->m_size.y : m->m_size.x;
-    return std::clamp(static_cast<double>(cfgInt("plugin:gloview:strip_height", 150)), 100.0, cross * 0.42);
+    return std::clamp(static_cast<double>(cfgInt("plugin:mission_control:strip_height", 150)), 100.0, cross * 0.42);
 }
 
 double Overview::stripOffset() const {
@@ -832,7 +832,7 @@ double Overview::stripOffset() const {
         return 0.0;
     // distance from the anchored edge. 0 = flush (no auto bar gap); purely cosmetic.
     const double cross = stripHorizontal() ? m->m_size.y : m->m_size.x;
-    return std::clamp(static_cast<double>(cfgInt("plugin:gloview:strip_offset", 0)), 0.0, cross * 0.4);
+    return std::clamp(static_cast<double>(cfgInt("plugin:mission_control:strip_offset", 0)), 0.0, cross * 0.4);
 }
 
 LRect Overview::stripBand() const {
@@ -868,10 +868,10 @@ bool Overview::blurEnabled() const {
     return blurStrength() > 0.0F;
 }
 
-// plugin:gloview:blur is a float: 0 = off, 1 = full, between scales blur strength via the
+// plugin:mission_control:blur is a float: 0 = off, 1 = full, between scales blur strength via the
 // pass alpha. Clamped 0..1.
 float Overview::blurStrength() const {
-    return std::clamp(cfgFloat("plugin:gloview:blur", 1.0F), 0.0F, 1.0F);
+    return std::clamp(cfgFloat("plugin:mission_control:blur", 1.0F), 0.0F, 1.0F);
 }
 
 // ---- open / close -----------------------------------------------------------
@@ -880,10 +880,10 @@ void Overview::toggle() {
     if (m_active && m_opening)
         close();
     else
-        open(); // opens into the tidy grid; Shift / gloview:desktop flips to the canvas
+        open(); // opens into the tidy grid; Shift / mission_control:desktop flips to the canvas
 }
 
-// gloview:allworkspaces — toggle the "expo" view (every window on the monitor). OPENS the
+// mission_control:allworkspaces — toggle the "expo" view (every window on the monitor). OPENS the
 // overview if closed (so it works as a single-key bind); while open flips expo on/off and
 // glides tiles. m_allOverride overrides show_all_workspaces until close (deactivate → -1).
 void Overview::toggleAllWorkspaces() {
@@ -904,7 +904,7 @@ void Overview::toggleAllWorkspaces() {
     replayReflow(oldBoxes);
 }
 
-// gloview:desktop — flip grid <-> canvas, ONLY while open (no-op closed).
+// mission_control:desktop — flip grid <-> canvas, ONLY while open (no-op closed).
 void Overview::toggleDesktop() {
     if (m_active && m_opening)
         setDesktopMode(!m_desktopMode);
@@ -954,7 +954,7 @@ void Overview::open() {
     m_dragging  = false;
     m_dragX = m_dragY = m_pressX = m_pressY = m_grabDX = m_grabDY = 0.0;
     m_canvasPos.clear();
-    m_desktopMode = false; // open into the tidy grid; Shift / gloview:desktop flips to the canvas
+    m_desktopMode = false; // open into the tidy grid; Shift / mission_control:desktop flips to the canvas
     m_newCardAnim = false;
     m_newCardId   = 0;
     m_newWs.reset();
@@ -1057,11 +1057,11 @@ void Overview::close() {
 
     restoreLayers(); // bars fade back in over the close animation, not in a pop at the end
     m_animStart = std::chrono::steady_clock::now() -
-        std::chrono::milliseconds(static_cast<long>((1.0 - m_progress) * std::max(1, cfgInt("plugin:gloview:duration", 360))));
+        std::chrono::milliseconds(static_cast<long>((1.0 - m_progress) * std::max(1, cfgInt("plugin:mission_control:duration", 360))));
     damage();
 }
 
-// Immediate, animation-free teardown for the UNLOAD path (`hyprctl gloviewunload`, run before
+// Immediate, animation-free teardown for the UNLOAD path (`hyprctl mission_control_unload`, run before
 // unloading). close() only *starts* the close anim; unloading the .so before it finishes can
 // yank the library while an overlay COverlayPass element or a pending recapture timer — both
 // holding callbacks in this .so — is still referenced → SEGV / IPC-dead spin. hardClose drops
@@ -1113,7 +1113,7 @@ void Overview::hardClose() {
 // Effective expo state. Runtime m_allOverride wins over the show_all_workspaces config;
 // -1 means "follow config".
 bool Overview::showAllWorkspaces() const {
-    return m_allOverride < 0 ? (cfgInt("plugin:gloview:show_all_workspaces", 0) != 0) : (m_allOverride != 0);
+    return m_allOverride < 0 ? (cfgInt("plugin:mission_control:show_all_workspaces", 0) != 0) : (m_allOverride != 0);
 }
 
 // Shared membership predicate for main-area tiles. buildTiles (full rebuild) and syncTiles
@@ -1126,7 +1126,7 @@ bool Overview::tileBelongs(const PHLWINDOW& w, const PHLMONITOR& m, const PHLWOR
     if (!wws)
         return false;
     if (showAllWorkspaces()) { // expo: every window living on this monitor, any workspace
-        if (wsSpecial(wws) && cfgInt("plugin:gloview:show_special", 0) == 0)
+        if (wsSpecial(wws) && cfgInt("plugin:mission_control:show_special", 0) == 0)
             return false;
         return wws->m_monitor.lock() == m;
     }
@@ -1220,8 +1220,8 @@ void Overview::buildStrip() {
     // dynamic_workspaces implies "no stray empties": the only empty workspace on the strip is
     // the trailing one, so show_empty is forced off regardless of how it is configured.
     const bool dynamic     = dynamicWorkspaces();
-    const bool showEmpty   = !dynamic && cfgInt("plugin:gloview:show_empty", 1) != 0;
-    const bool showSpecial = cfgInt("plugin:gloview:show_special", 0) != 0;
+    const bool showEmpty   = !dynamic && cfgInt("plugin:mission_control:show_empty", 1) != 0;
+    const bool showSpecial = cfgInt("plugin:mission_control:show_special", 0) != 0;
     const auto wsHasWindows = [this](const PHLWORKSPACE& w) { return wsHasMappedWindows(w); };
 
     std::vector<PHLWORKSPACE> wss;
@@ -1250,7 +1250,7 @@ void Overview::buildStrip() {
 
     // optional leading "All workspaces" card (toggles expo). Pushed FIRST so it sits at the
     // strip's leading edge; skipped wherever cards are treated as workspaces (see isAll guards).
-    if (cfgInt("plugin:gloview:strip_all_card", 0) != 0) {
+    if (cfgInt("plugin:mission_control:strip_all_card", 0) != 0) {
         StripItem all;
         all.isAll = true;
         all.id    = 0;
@@ -1334,8 +1334,8 @@ void Overview::buildStrip() {
     //     the monitor edges and nothing spills into the preview area.
     const LRect  band   = stripBand();
     const bool   horiz  = stripHorizontal();
-    const double margin = cfgInt("plugin:gloview:strip_margin", 22);
-    const double gap    = cfgInt("plugin:gloview:strip_gap", 18);
+    const double margin = cfgInt("plugin:mission_control:strip_margin", 22);
+    const double gap    = cfgInt("plugin:mission_control:strip_gap", 18);
     const double labelH = stripLabelH(); // 0 when workspace labels are off — cards take the space
     const double aspect = m->m_size.x / std::max(1.0, m->m_size.y);
 
@@ -1421,11 +1421,11 @@ void Overview::layoutTiles() {
         return;
 
     LayoutCfg cfg;
-    cfg.engine    = parseEngine(cfgStr("plugin:gloview:layout", "rows").c_str());
-    cfg.gap       = cfgInt("plugin:gloview:gap", 34);
-    const int padX = cfgInt("plugin:gloview:padding", 80);
-    const int padT = cfgInt("plugin:gloview:padding_top", 40);
-    const int padB = cfgInt("plugin:gloview:padding_bottom", 70);
+    cfg.engine    = parseEngine(cfgStr("plugin:mission_control:layout", "rows").c_str());
+    cfg.gap       = cfgInt("plugin:mission_control:gap", 34);
+    const int padX = cfgInt("plugin:mission_control:padding", 80);
+    const int padT = cfgInt("plugin:mission_control:padding_top", 40);
+    const int padB = cfgInt("plugin:mission_control:padding_bottom", 70);
     cfg.padLeft   = padX;
     cfg.padRight  = padX;
     cfg.padTop    = padT;
@@ -1441,7 +1441,7 @@ void Overview::layoutTiles() {
         case Anchor::Top:
         default:             cfg.padTop += bandSpan; break;
     }
-    cfg.maxScale  = cfgFloat("plugin:gloview:max_scale", 1.0F);
+    cfg.maxScale  = cfgFloat("plugin:mission_control:max_scale", 1.0F);
 
     // Desktop (canvas) mode: fit the WHOLE monitor into the usable area and place each
     // preview at its real scaled position — a shrunk live desktop. A dragged preview keeps
@@ -1653,7 +1653,7 @@ double Overview::tileBaseProgress() const {
     // During a drop reflow the tiles glide on their own timer while the chrome
     // (m_progress) stays pinned at 1; everywhere else they ride m_progress.
     if (m_reflowing) {
-        const double dur = std::max(1, cfgInt("plugin:gloview:duration", 360));
+        const double dur = std::max(1, cfgInt("plugin:mission_control:duration", 360));
         return std::clamp(nowMs(m_reflowStart) / dur, 0.0, 1.0);
     }
     return m_progress;
@@ -1688,7 +1688,7 @@ LRect Overview::currentBox(const Tile& t, int i) const {
 void Overview::beginWsSlide(int dir) {
     // Expo shows every window regardless of the displayed workspace, so a "switch" changes
     // nothing on screen — sliding would just duplicate every tile against itself.
-    if (cfgInt("plugin:gloview:switch_animation", 1) == 0 || showAllWorkspaces()) {
+    if (cfgInt("plugin:mission_control:switch_animation", 1) == 0 || showAllWorkspaces()) {
         endWsSlide();
         return;
     }
@@ -1719,7 +1719,7 @@ void Overview::endWsSlide() {
 double Overview::wsSlideRaw() const {
     if (!m_wsSliding)
         return 1.0;
-    const double dur = std::max(1, cfgInt("plugin:gloview:switch_duration", 260));
+    const double dur = std::max(1, cfgInt("plugin:mission_control:switch_duration", 260));
     return std::clamp(nowMs(m_wsSlideStart) / dur, 0.0, 1.0);
 }
 
@@ -1745,7 +1745,7 @@ Vector2D Overview::wsSlideOffset(bool outgoing) const {
 // card, so the move reads as a move.
 void Overview::beginFly(const PHLWINDOW& w, const LRect& from, const PHLWORKSPACE& ws, const LRect& card) {
     m_flying.clear();
-    if (!w || !ws || cfgInt("plugin:gloview:move_animation", 1) == 0 || from.w <= 0.0 || from.h <= 0.0)
+    if (!w || !ws || cfgInt("plugin:mission_control:move_animation", 1) == 0 || from.w <= 0.0 || from.h <= 0.0)
         return;
     // Expo keeps the window on screen after the move — it just reflows into a new slot — so a
     // flight would draw a second copy of a tile that never left.
@@ -1763,7 +1763,7 @@ void Overview::beginFly(const PHLWINDOW& w, const LRect& from, const PHLWORKSPAC
 double Overview::flyRaw() const {
     if (m_flying.empty())
         return 1.0;
-    const double dur = std::max(1, cfgInt("plugin:gloview:move_duration", 240));
+    const double dur = std::max(1, cfgInt("plugin:mission_control:move_duration", 240));
     return std::clamp(nowMs(m_flyStart) / dur, 0.0, 1.0);
 }
 
@@ -1805,7 +1805,7 @@ LRect Overview::flyBox(const FlyWin& f) const {
 // landing on exactly what renderStripWindows will draw a frame later.
 double Overview::flyRound(const LRect& box) const {
     const double e = easeInOutCubic(flyRaw());
-    const double r = lerp(cfgInt("plugin:gloview:preview_round", 12), cfgInt("plugin:gloview:strip_card_round", 10), e);
+    const double r = lerp(cfgInt("plugin:mission_control:preview_round", 12), cfgInt("plugin:mission_control:strip_card_round", 10), e);
     return std::min(r, std::min(box.w, box.h) * 0.35);
 }
 
@@ -1821,7 +1821,7 @@ bool Overview::isFlying(const PHLWINDOW& w) const {
 }
 
 void Overview::updateAnimation() {
-    const double dur = std::max(1, cfgInt("plugin:gloview:duration", 360));
+    const double dur = std::max(1, cfgInt("plugin:mission_control:duration", 360));
     const double t   = std::clamp(nowMs(m_animStart) / dur, 0.0, 1.0);
     m_progress       = m_opening ? t : 1.0 - t;
     if (m_reflowing && nowMs(m_reflowStart) >= dur)
@@ -1830,7 +1830,7 @@ void Overview::updateAnimation() {
         endWsSlide();
     if (!m_flying.empty() && flyRaw() >= 1.0)
         m_flying.clear();
-    if (m_newCardAnim && nowMs(m_newCardStart) >= std::max(120, cfgInt("plugin:gloview:duration", 360))) {
+    if (m_newCardAnim && nowMs(m_newCardStart) >= std::max(120, cfgInt("plugin:mission_control:duration", 360))) {
         m_newCardAnim = false;
         m_newCardId   = 0;
     }
@@ -1865,7 +1865,7 @@ void Overview::renderStage(const Event::SRenderStageEvent& ev) {
         return;
     auto& ctx = ev.context->get();
 
-    const auto previewFilter = cfgStr("plugin:gloview:preview_filter", "box4");
+    const auto previewFilter = cfgStr("plugin:mission_control:preview_filter", "box4");
     m_previewFilterGrid = previewFilter == "box16" ? 4 : previewFilter == "box4" ? 2 : 0;
 
     updateAnimation();
@@ -1877,7 +1877,7 @@ void Overview::renderStage(const Event::SRenderStageEvent& ev) {
 
     // exit_on_switch: live workspace changed underneath us. switchToWorkspace only moves the
     // DISPLAYED workspace, so this fires only on genuine external switches.
-    if (m_opening && cfgInt("plugin:gloview:exit_on_switch", 0) != 0 && m->m_activeWorkspace != m_liveWsAtOpen.lock()) {
+    if (m_opening && cfgInt("plugin:mission_control:exit_on_switch", 0) != 0 && m->m_activeWorkspace != m_liveWsAtOpen.lock()) {
         m_workspace = m->m_activeWorkspace; // accept the external switch so deactivate() doesn't revert it
         close();
     }
@@ -1929,7 +1929,7 @@ void Overview::renderBackdrop(Render::CRenderContext& ctx) const {
     if (!m)
         return;
     const double e   = eased();
-    const auto   col = argb(cfgColor("plugin:gloview:backdrop_color", 0x73070a10), e);
+    const auto   col = argb(cfgColor("plugin:mission_control:backdrop_color", 0x73070a10), e);
     if (col.a <= 0.0)
         return;
     const double s = m->m_scale;
@@ -1946,21 +1946,21 @@ void Overview::renderStrip(Render::CRenderContext& ctx) const {
     const double s = m->m_scale; // logical→pixel; Hyprland's renderRect wants pixel coords
 
     // translucent band behind the cards (kept faint per request)
-    const auto     bandCol = argb(cfgColor("plugin:gloview:strip_band_color", 0x24ffffff), e);
+    const auto     bandCol = argb(cfgColor("plugin:mission_control:strip_band_color", 0x24ffffff), e);
     const bool     blur    = blurEnabled();
     const LRect    bandR   = stripBand();
     const Vector2D slide   = stripSlide(e);  // slide the whole strip in from its edge
     const Vector2D scroll  = stripScroll();  // scroll the card group along the band
     g_pHyprOpenGL->renderRect(ctx, pxb(CBox(bandR.x + slide.x, bandR.y + slide.y, bandR.w, bandR.h), s), bandCol, {.blur = blur, .blurA = static_cast<float>(e) * blurStrength()});
 
-    const int  cardRound  = cfgInt("plugin:gloview:strip_card_round", 10);
-    const auto cardBg     = argb(cfgColor("plugin:gloview:strip_card_color", 0x3a0e131c), e);
-    const auto activeBg   = argb(cfgColor("plugin:gloview:strip_active_color", 0x4d1c2c44), e);
-    const auto plusCol    = argb(cfgColor("plugin:gloview:strip_plus_color", 0xd0eef4ff), e);
+    const int  cardRound  = cfgInt("plugin:mission_control:strip_card_round", 10);
+    const auto cardBg     = argb(cfgColor("plugin:mission_control:strip_card_color", 0x3a0e131c), e);
+    const auto activeBg   = argb(cfgColor("plugin:mission_control:strip_active_color", 0x4d1c2c44), e);
+    const auto plusCol    = argb(cfgColor("plugin:mission_control:strip_plus_color", 0xd0eef4ff), e);
     // Expo indicator: when all-workspaces is active, the "All" card (if present) lights up
     // active-style. The live workspace keeps its activeBg fill either way.
     const bool allWs       = showAllWorkspaces();
-    const bool allCardShown = cfgInt("plugin:gloview:strip_all_card", 0) != 0;
+    const bool allCardShown = cfgInt("plugin:mission_control:strip_all_card", 0) != 0;
 
     for (size_t i = 0; i < m_strip.size(); ++i) {
         const auto&  it     = m_strip[i];
@@ -2074,7 +2074,7 @@ void Overview::renderStripWindows(Render::CRenderContext& ctx) const {
             // Round the surface only while it is fully inside the card — on a cropped edge the
             // corner arc would sit mid-card with nothing behind it.
             const bool   cropped    = !roughly(clipPx.w, slotPx.w, 0.01) || !roughly(clipPx.h, slotPx.h, 0.01);
-            const double stripRound = stripWindowRound(cfgInt("plugin:gloview:strip_card_round", 10), slot.w, slot.h, cropped);
+            const double stripRound = stripWindowRound(cfgInt("plugin:mission_control:strip_card_round", 10), slot.w, slot.h, cropped);
             renderWindowLive(ctx, w, m, slotPx, clipPx, static_cast<float>(e), when, m_previewFilterGrid, stripRound);
         }
     }
@@ -2106,13 +2106,13 @@ void Overview::renderStripRings(Render::CRenderContext& ctx) const {
     const double   s          = m->m_scale;
     const Vector2D slide      = stripSlide(e);
     const Vector2D scroll     = stripScroll();
-    const int      cardRound  = cfgInt("plugin:gloview:strip_card_round", 10);
-    const auto     activeLine = argb(cfgColor("plugin:gloview:strip_active_border", 0xf0ffffff), e);
-    const auto     hoverLine  = argb(cfgColor("plugin:gloview:strip_hover_border", 0x80ffffff), e);
-    const double   activeSize = std::max(1, cfgInt("plugin:gloview:strip_active_border_size", 2));
-    const double   hoverSize  = std::max(1, cfgInt("plugin:gloview:strip_hover_border_size", 2));
+    const int      cardRound  = cfgInt("plugin:mission_control:strip_card_round", 10);
+    const auto     activeLine = argb(cfgColor("plugin:mission_control:strip_active_border", 0xf0ffffff), e);
+    const auto     hoverLine  = argb(cfgColor("plugin:mission_control:strip_hover_border", 0x80ffffff), e);
+    const double   activeSize = std::max(1, cfgInt("plugin:mission_control:strip_active_border_size", 2));
+    const double   hoverSize  = std::max(1, cfgInt("plugin:mission_control:strip_hover_border_size", 2));
     const bool     allWs        = showAllWorkspaces();
-    const bool     allCardShown = cfgInt("plugin:gloview:strip_all_card", 0) != 0;
+    const bool     allCardShown = cfgInt("plugin:mission_control:strip_all_card", 0) != 0;
 
     for (size_t i = 0; i < m_strip.size(); ++i) {
         const auto& it       = m_strip[i];
@@ -2143,8 +2143,8 @@ void Overview::drawPreviewTile(Render::CRenderContext& ctx, size_t i, const LRec
         return;
     const double s         = m->m_scale; // logical→pixel; Hyprland's renderRect wants pixel coords
     const double e         = eased();
-    const int    round     = cfgInt("plugin:gloview:preview_round", 12);
-    const auto   shadowCol = argb(cfgColor("plugin:gloview:shadow_color", 0x70000000), 1.0);
+    const int    round     = cfgInt("plugin:mission_control:preview_round", 12);
+    const auto   shadowCol = argb(cfgColor("plugin:mission_control:shadow_color", 0x70000000), 1.0);
 
     const auto& t = m_tiles[i];
     const auto  w = t.win.lock();
@@ -2173,14 +2173,14 @@ void Overview::drawPreviewTile(Render::CRenderContext& ctx, size_t i, const LRec
     const LRect bb{lb.x + 1.0, lb.y + 1.0, std::max(0.0, lb.w - 2.0), std::max(0.0, lb.h - 2.0)};
     // A fading tile (Tile::fades) takes its backing with it — in on open, out on close — else
     // the dark slab shows up before the surface or outlives it.
-    g_pHyprOpenGL->renderRect(ctx, pxb(bb, s), argb(cfgColor("plugin:gloview:preview_bg", 0xff14181f), t.fades ? e : 1.0), {.round = pxr(round, s)});
+    g_pHyprOpenGL->renderRect(ctx, pxb(bb, s), argb(cfgColor("plugin:mission_control:preview_bg", 0xff14181f), t.fades ? e : 1.0), {.round = pxr(round, s)});
 
     // desktop (canvas) mode: a "✕" close button in the top-right of every preview.
     // The glyph is baked at pt*scale (see labelPt): work in logical px so the fit
     // computation and pxb() map 1:1 back onto texels.
     if (m_desktopMode && !lift) {
         const LRect br = closeButtonRect(lb);
-        g_pHyprOpenGL->renderRect(ctx, pxb(br, s), argb(cfgColor("plugin:gloview:close_button_color", 0xe6e23b3b), e), {.round = pxr(br.h / 2.0, s)});
+        g_pHyprOpenGL->renderRect(ctx, pxb(br, s), argb(cfgColor("plugin:mission_control:close_button_color", 0xe6e23b3b), e), {.round = pxr(br.h / 2.0, s)});
         if (m_closeGlyph && m_closeGlyph->m_size.x > 0) {
             const Vector2D gsz = labelSize(m_closeGlyph, m_closeGlyphScale);
             const double   gw = gsz.x, gh = gsz.y;
@@ -2222,9 +2222,9 @@ void Overview::drawPreviewRing(Render::CRenderContext& ctx, size_t i, const LRec
 
     const double s     = m->m_scale;
     const double e     = eased();
-    const double round = cfgInt("plugin:gloview:preview_round", 12);
-    const double th    = framed ? std::max(1, cfgInt("plugin:gloview:hover_border_size", 3)) : std::max(1, cfgInt("plugin:gloview:select_border_size", 3));
-    const auto   col   = framed ? argb(cfgColor("plugin:gloview:hover_border", 0xf0ffffff), e) : argb(cfgColor("plugin:gloview:select_border", 0xf066ccff), e);
+    const double round = cfgInt("plugin:mission_control:preview_round", 12);
+    const double th    = framed ? std::max(1, cfgInt("plugin:mission_control:hover_border_size", 3)) : std::max(1, cfgInt("plugin:mission_control:select_border_size", 3));
+    const auto   col   = framed ? argb(cfgColor("plugin:mission_control:hover_border", 0xf0ffffff), e) : argb(cfgColor("plugin:mission_control:select_border", 0xf066ccff), e);
 
     renderRing(ctx, pxb(tileContentBox(i, slot), s), col, round * s, th);
 }
@@ -2307,7 +2307,7 @@ void Overview::renderMainWindows(Render::CRenderContext& ctx) const {
     const int    dragIdx = (m_dragging && m_pressTile >= 0 && m_pressTile < static_cast<int>(m_tiles.size())) ? m_pressTile : -1;
     const double scale   = m->m_scale;
     const double e       = eased();
-    const double round   = cfgInt("plugin:gloview:preview_round", 12);
+    const double round   = cfgInt("plugin:mission_control:preview_round", 12);
     const auto   when    = Time::steadyNow();
     for (const bool fading : {true, false})
         for (size_t i = 0; i < m_tiles.size(); ++i) {
@@ -2330,9 +2330,9 @@ void Overview::renderPrevPreviews(Render::CRenderContext& ctx) const {
         return;
     const double   s         = m->m_scale;
     const double   e         = eased();
-    const int      round     = cfgInt("plugin:gloview:preview_round", 12);
-    const auto     shadowCol = argb(cfgColor("plugin:gloview:shadow_color", 0x70000000), 1.0);
-    const auto     bg        = argb(cfgColor("plugin:gloview:preview_bg", 0xff14181f), 1.0);
+    const int      round     = cfgInt("plugin:mission_control:preview_round", 12);
+    const auto     shadowCol = argb(cfgColor("plugin:mission_control:shadow_color", 0x70000000), 1.0);
+    const auto     bg        = argb(cfgColor("plugin:mission_control:preview_bg", 0xff14181f), 1.0);
     const Vector2D off       = wsSlideOffset(true);
 
     for (const auto& t : m_prevTiles) {
@@ -2354,7 +2354,7 @@ void Overview::renderPrevWindows(Render::CRenderContext& ctx) const {
     const double   scale = m->m_scale;
     const auto     when  = Time::steadyNow();
     const Vector2D off   = wsSlideOffset(true);
-    const double   round = cfgInt("plugin:gloview:preview_round", 12);
+    const double   round = cfgInt("plugin:mission_control:preview_round", 12);
 
     for (const auto& t : m_prevTiles) {
         const auto w = t.win.lock();
@@ -2376,8 +2376,8 @@ void Overview::renderFlyTile(Render::CRenderContext& ctx) const {
     // used to fade out as it flew, which — on top of the card already showing the window —
     // read as the drop failing rather than completing.
     const double lift      = 1.0 - easeInOutCubic(flyRaw()); // 1 in the air, 0 on the card
-    const auto   shadowCol = argb(cfgColor("plugin:gloview:shadow_color", 0x70000000), 1.0);
-    const auto   bg        = argb(cfgColor("plugin:gloview:preview_bg", 0xff14181f), 1.0);
+    const auto   shadowCol = argb(cfgColor("plugin:mission_control:shadow_color", 0x70000000), 1.0);
+    const auto   bg        = argb(cfgColor("plugin:mission_control:preview_bg", 0xff14181f), 1.0);
 
     for (const auto& f : m_flying) {
         const auto w = f.win.lock();
@@ -2434,13 +2434,13 @@ void Overview::renderDragWindow(Render::CRenderContext& ctx) const {
     const LRect  lb    = tileContentBox(static_cast<size_t>(dragIdx), dragBox());
     const CBox   px(lb.x * scale, lb.y * scale, lb.w * scale, lb.h * scale);
     renderWindowLive(ctx, w, m, px, px, static_cast<float>(e), Time::steadyNow(), m_previewFilterGrid,
-                     static_cast<double>(cfgInt("plugin:gloview:preview_round", 12)));
+                     static_cast<double>(cfgInt("plugin:mission_control:preview_round", 12)));
 }
 
 bool Overview::isAboveLayer(const std::string& ns) const {
     if (ns.find("aboveoverview") != std::string::npos)
         return true;
-    const std::string list = cfgStr("plugin:gloview:above_namespaces", "");
+    const std::string list = cfgStr("plugin:mission_control:above_namespaces", "");
     size_t            i     = 0;
     while (i < list.size()) {
         // split on commas AND whitespace
@@ -2549,7 +2549,7 @@ bool Overview::onMouseAxis(const IPointer::SAxisEvent& e) {
         overStrip         = (lx >= band.x && ly >= band.y && lx <= band.x + band.w && ly <= band.y + band.h);
     }
 
-    if (!overStrip && cfgInt("plugin:gloview:scroll_switches_workspace", 1) != 0) {
+    if (!overStrip && cfgInt("plugin:mission_control:scroll_switches_workspace", 1) != 0) {
         if (notches != 0.0)
             stepWorkspace(notches > 0 ? 1 : -1);
         return true;
@@ -2623,7 +2623,7 @@ void Overview::updateHover() {
         m_hoveredStrip = newStrip;
         // keep the keyboard selection under the pointer so arrow-nav picks up where
         // the mouse left off (macOS-like). Only when actually over a tile.
-        if (newTile >= 0 && cfgInt("plugin:gloview:focus_follows_mouse", 1) != 0) {
+        if (newTile >= 0 && cfgInt("plugin:mission_control:focus_follows_mouse", 1) != 0) {
             m_selected = newTile;
             syncFocus(); // so a passthrough killactive/hotkey hits the hovered window
         }
@@ -2743,7 +2743,7 @@ bool Overview::onMouseButton(const IPointer::SButtonEvent& e) {
             }
             // grid mode: dropped onto another preview → swap the two windows' places.
             // (Skipped in desktop/canvas mode, where a drop parks the preview instead.)
-            if (!m_desktopMode && w && cfgInt("plugin:gloview:drag_to_swap", 1) != 0) {
+            if (!m_desktopMode && w && cfgInt("plugin:mission_control:drag_to_swap", 1) != 0) {
                 for (size_t i = 0; i < m_tiles.size(); ++i) {
                     if (static_cast<int>(i) == press)
                         continue;
@@ -2774,7 +2774,7 @@ bool Overview::onMouseButton(const IPointer::SButtonEvent& e) {
         return true;
     }
 
-    if (cfgInt("plugin:gloview:exit_on_click", 1) != 0)
+    if (cfgInt("plugin:mission_control:exit_on_click", 1) != 0)
         close(); // released on empty space
     return true;
 }
@@ -2808,7 +2808,7 @@ void Overview::dropOnWorkspace(const PHLWINDOW& w, const StripItem& it, const LR
     // switch_on_drop follows the window to its new workspace, so it reappears as a full-size
     // main-area tile — flying a second copy of it into the card at the same time reads as two
     // windows. Only animate the move when the window is actually leaving the view.
-    const bool follow = cfgInt("plugin:gloview:switch_on_drop", 0) != 0;
+    const bool follow = cfgInt("plugin:mission_control:switch_on_drop", 0) != 0;
     if (!follow)
         beginFly(w, fromBox, target, cardBox);
 
@@ -2940,7 +2940,7 @@ void Overview::switchToWorkspace(const StripItem& it) {
     m_progress  = 1.0;
     m_opening   = true;
     m_reflowing = false;
-    m_animStart = std::chrono::steady_clock::now() - std::chrono::milliseconds(std::max(1, cfgInt("plugin:gloview:duration", 360)));
+    m_animStart = std::chrono::steady_clock::now() - std::chrono::milliseconds(std::max(1, cfgInt("plugin:mission_control:duration", 360)));
     damage();
 }
 
@@ -2975,7 +2975,7 @@ void Overview::commitWorkspace() {
     settle(ws);
 }
 
-// gloview:next / gloview:prev — while the overview is up, same semantics as tab and the
+// mission_control:next / mission_control:prev — while the overview is up, same semantics as tab and the
 // scroll wheel: move the DISPLAYED workspace, commit to the live desktop on close. While it
 // is closed the same binds switch the live desktop, so one key drives workspaces everywhere.
 void Overview::nextWorkspace() {
@@ -3010,7 +3010,7 @@ std::vector<PHLWORKSPACE> Overview::liveWorkspaceList(const PHLMONITOR& m) const
         return wss;
     const auto cur      = m->m_activeWorkspace;
     const bool dynamic   = dynamicWorkspaces();
-    const bool showEmpty = !dynamic && cfgInt("plugin:gloview:show_empty", 1) != 0;
+    const bool showEmpty = !dynamic && cfgInt("plugin:mission_control:show_empty", 1) != 0;
 
     for (const auto& wref : State::workspaceState()->workspaces()) {
         const auto ws = wref.lock();
@@ -3029,8 +3029,8 @@ std::vector<PHLWORKSPACE> Overview::liveWorkspaceList(const PHLMONITOR& m) const
     return wss;
 }
 
-// Step the LIVE desktop one workspace forward/back (wrapping), used when gloview:next /
-// gloview:prev fire with the overview closed. Under dynamic_workspaces the list gains a
+// Step the LIVE desktop one workspace forward/back (wrapping), used when mission_control:next /
+// mission_control:prev fire with the overview closed. Under dynamic_workspaces the list gains a
 // trailing create-on-use slot whenever the last workspace is populated, so walking off the
 // end lands you on a fresh empty desktop (gnome / hyprnome); the one you left behind is
 // unpinned and empty, so Hyprland reaps it. Returns false when there was nowhere to go.
@@ -3094,13 +3094,13 @@ bool Overview::stepLiveWorkspace(int dir) {
     return true;
 }
 
-// gloview:setworkspace <id>. Prefers the strip card, but falls back to any workspace living
+// mission_control:setworkspace <id>. Prefers the strip card, but falls back to any workspace living
 // on this monitor so the dispatcher isn't at the mercy of show_empty / dynamic_workspaces
 // hiding the target's card.
 bool Overview::setWorkspace(int id) {
     if (id <= 0) // numbered workspaces only: scratchpad cards carry id 0 (see wsId)
         return false;
-    // Closed: switch the live desktop, like gloview:next/prev now do. Only to a workspace that
+    // Closed: switch the live desktop, like mission_control:next/prev now do. Only to a workspace that
     // already exists on this monitor — creating one on demand is Hyprland's own `workspace`
     // dispatcher's job.
     if (!(m_active && m_opening)) {
@@ -3162,7 +3162,7 @@ void Overview::onKey(const IKeyboard::SKeyEvent& e, bool& cancel) {
     // arrows (move cursor); everything else passes THROUGH to Hyprland in passthrough
     // mode so the user's normal keybinds keep working. With passthrough off it's fully
     // modal — every key swallowed. Keycodes are evdev (layout-independent).
-    const bool passthrough = cfgInt("plugin:gloview:passthrough_keys", 1) != 0;
+    const bool passthrough = cfgInt("plugin:mission_control:passthrough_keys", 1) != 0;
 
     if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED) {
         cancel = !passthrough; // balance the release half of any key we let through on press
@@ -3179,29 +3179,29 @@ void Overview::onKey(const IKeyboard::SKeyEvent& e, bool& cancel) {
     uint32_t mods = g_pInputManager ? static_cast<uint32_t>(g_pInputManager->getModsFromAllKBs()) : 0;
     mods &= ~modBitForKeycode(k);
     bool handled = true;
-    if (keyMatches(k, mods, "plugin:gloview:key_close", "escape"))
+    if (keyMatches(k, mods, "plugin:mission_control:key_close", "escape"))
         close();
-    else if (keyMatches(k, mods, "plugin:gloview:key_next_workspace", "tab"))
+    else if (keyMatches(k, mods, "plugin:mission_control:key_next_workspace", "tab"))
         stepWorkspace(1); // cycle the displayed workspace card (wraps; committed on close)
-    else if (keyMatches(k, mods, "plugin:gloview:key_prev_workspace", "shift+tab"))
+    else if (keyMatches(k, mods, "plugin:mission_control:key_prev_workspace", "shift+tab"))
         stepWorkspace(-1);
-    else if (keyMatches(k, mods, "plugin:gloview:key_activate", "enter"))
+    else if (keyMatches(k, mods, "plugin:mission_control:key_activate", "enter"))
         activateSelection();
-    else if (keyMatches(k, mods, "plugin:gloview:key_close_window", "d"))
+    else if (keyMatches(k, mods, "plugin:mission_control:key_close_window", "d"))
         closeTileWindow(m_selected); // sendClose the SELECTED tile (keyboard/hover cursor), stay open & reflow
-    else if (keyMatches(k, mods, "plugin:gloview:key_left", "left"))
+    else if (keyMatches(k, mods, "plugin:mission_control:key_left", "left"))
         moveSelection(-1, 0);
-    else if (keyMatches(k, mods, "plugin:gloview:key_right", "right"))
+    else if (keyMatches(k, mods, "plugin:mission_control:key_right", "right"))
         moveSelection(1, 0);
-    else if (keyMatches(k, mods, "plugin:gloview:key_up", "up"))
+    else if (keyMatches(k, mods, "plugin:mission_control:key_up", "up"))
         moveSelection(0, -1);
-    else if (keyMatches(k, mods, "plugin:gloview:key_down", "down"))
+    else if (keyMatches(k, mods, "plugin:mission_control:key_down", "down"))
         moveSelection(0, 1);
-    else if (keyMatches(k, mods, "plugin:gloview:key_desktop", "shift"))
+    else if (keyMatches(k, mods, "plugin:mission_control:key_desktop", "shift"))
         setDesktopMode(!m_desktopMode);
-    else if (keyMatches(k, mods, "plugin:gloview:key_all_workspaces", "a"))
+    else if (keyMatches(k, mods, "plugin:mission_control:key_all_workspaces", "a"))
         toggleAllWorkspaces(); // flip the expo (all-workspaces) main view
-    else if (const int ws = keyIndex(k, mods, "plugin:gloview:key_workspace", "1,2,3,4,5,6,7,8,9,0"); ws >= 0) {
+    else if (const int ws = keyIndex(k, mods, "plugin:mission_control:key_workspace", "1,2,3,4,5,6,7,8,9,0"); ws >= 0) {
         // number-row 1..0 → switch to the Nth (non-"+") card's workspace, in the overview
         // AND for real now. Update m_liveWsAtOpen so the exit_on_switch poll doesn't read
         // this self-switch as external.
@@ -3293,7 +3293,7 @@ uint32_t modNameToBit(std::string t) {
 // Match one token ("tab", "shift+tab", "ctrl+shift+k") against the pressed keycode and
 // the currently held modifiers — EXACT on shift/ctrl/alt/super. Unrequested modifiers
 // must NOT be held: a bare "tab" must not swallow shift+tab (its own action) nor
-// super+tab (commonly the user's gloview:toggle bind — with passthrough it falls
+// super+tab (commonly the user's mission_control:toggle bind — with passthrough it falls
 // through to Hyprland's keybind manager, so the same bind that opened the overview
 // closes it). Only lock states (caps/num) are ignored.
 bool comboMatches(int keycode, uint32_t heldMods, std::string token) {
@@ -3346,8 +3346,8 @@ int Overview::keyIndex(int keycode, uint32_t mods, const char* cfgName, const ch
 }
 
 void Overview::dbg(const std::string& msg) const {
-    if (cfgInt("plugin:gloview:debug_logs", 0) != 0 && Log::logger)
-        Log::logger->log(Log::INFO, "[gloview] {}", msg);
+    if (cfgInt("plugin:mission_control:debug_logs", 0) != 0 && Log::logger)
+        Log::logger->log(Log::INFO, "[mission-control] {}", msg);
 }
 
 // Step the selection cursor to the nearest tile in a screen direction (dx/dy unit step).
@@ -3470,7 +3470,7 @@ void Overview::replayReflow(std::vector<std::pair<PHLWINDOW, LRect>>& oldBoxes) 
     const auto now = std::chrono::steady_clock::now();
     m_progress     = 1.0;
     m_opening      = true;
-    m_animStart    = now - std::chrono::milliseconds(std::max(1, cfgInt("plugin:gloview:duration", 360)));
+    m_animStart    = now - std::chrono::milliseconds(std::max(1, cfgInt("plugin:mission_control:duration", 360)));
     m_reflowing    = true;
     m_reflowStart  = now;
     damage();
@@ -3578,8 +3578,8 @@ void Overview::hideLayers() {
     const auto m = m_monitor.lock();
     if (!m)
         return;
-    const bool top = cfgInt("plugin:gloview:hide_top_layers", 0) != 0;
-    const bool ovl = cfgInt("plugin:gloview:hide_overlay_layers", 0) != 0;
+    const bool top = cfgInt("plugin:mission_control:hide_top_layers", 0) != 0;
+    const bool ovl = cfgInt("plugin:mission_control:hide_overlay_layers", 0) != 0;
     if (!top && !ovl)
         return;
     const auto fade = [this](const std::vector<PHLLSREF>& layer) {
@@ -3643,7 +3643,7 @@ void Overview::addWorkspace(int id_) {
     m_newCardStart = std::chrono::steady_clock::now();
     m_newCardAnim  = true;
     dbg("added workspace " + std::to_string(id));
-    if (cfgInt("plugin:gloview:switch_on_new_workspace", 1) != 0) {
+    if (cfgInt("plugin:mission_control:switch_on_new_workspace", 1) != 0) {
         StripItem it;
         it.ws = ws;
         switchToWorkspace(it); // follow the display (rebuilds the strip with the new card)
@@ -3674,7 +3674,7 @@ void Overview::closeWorkspaceWindows(const StripItem& it) {
 double Overview::newCardScale() const {
     if (!m_newCardAnim)
         return 1.0;
-    const double dur = std::max(120, cfgInt("plugin:gloview:duration", 360));
+    const double dur = std::max(120, cfgInt("plugin:mission_control:duration", 360));
     const double p   = std::clamp(nowMs(m_newCardStart) / dur, 0.0, 1.0);
     // easeOutBack — a little overshoot so the card "pops" in
     const double c1 = 1.70158, c3 = c1 + 1.0;
@@ -3736,7 +3736,7 @@ void Overview::deactivate() {
     m_reflowing = false;
     m_pendingDeactivate = false;
     m_desktopMode = false;
-    m_allOverride = -1; // next open follows plugin:gloview:show_all_workspaces again
+    m_allOverride = -1; // next open follows plugin:mission_control:show_all_workspaces again
     m_newCardAnim = false;
     m_newCardId   = 0;
     m_progress = 0.0;
@@ -3758,4 +3758,4 @@ void Overview::damage() const {
         g_pHyprRenderer->damageMonitor(m);
 }
 
-} // namespace gloview
+} // namespace missioncontrol

@@ -12,32 +12,32 @@ compositor-side during Hyprland's render stage; the real windows are hidden whil
 ## Commands
 
 ```sh
-# Build (produces build/gloview.so against the installed hyprland headers)
+# Build (produces build/omarchy-macos-mission-control.so against the installed hyprland headers)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
 # Rebuild + hot-reload into the running Hyprland (use this when iterating)
-cmake --build build --target reload   # build + gloviewunload + same-path plugin unload/load
+cmake --build build --target reload   # build + mission_control_unload + same-path plugin unload/load
 
 # Nix (what CI runs — the only CI job — and how NixOS users build it)
 nix build .#gloview --print-build-logs
 nix develop                            # shell with the pinned Hyprland + clang-tools
 
 # Invoke at runtime
-hyprctl gloview        # toggle (exact hyprctl command, not lua-evaluated)
-hyprctl gloviewclose   # close-only (animated), no-op if closed
-hyprctl gloviewdesktop # flip the free-arrange canvas mode
-hyprctl gloviewall     # toggle the all-workspaces (expo) view
-hyprctl gloviewnext / gloviewprev
-hyprctl gloviewunload  # immediate animation-free teardown; the `reload` target runs this before unloading
-# dispatchers: gloview:toggle / open / close / desktop / allworkspaces / next / prev / setworkspace <id>
-# lua (Lua config only): hl.plugin.gloview.{toggle,open,close,desktop,allworkspaces,next,prev,setworkspace}
+hyprctl mission_control        # toggle (exact hyprctl command, not lua-evaluated)
+hyprctl mission_control_close   # close-only (animated), no-op if closed
+hyprctl mission_control_desktop # flip the free-arrange canvas mode
+hyprctl mission_control_all     # toggle the all-workspaces (expo) view
+hyprctl mission_control_next / mission_control_prev
+hyprctl mission_control_unload  # immediate animation-free teardown; the `reload` target runs this before unloading
+# dispatchers: mission_control:toggle / open / close / desktop / allworkspaces / next / prev / setworkspace <id>
+# lua (Lua config only): hl.plugin.mission_control.{toggle,open,close,desktop,allworkspaces,next,prev,setworkspace}
 ```
 
 There are **no tests** and no linter beyond compiler warnings (`-Wall -Wextra`, C++23).
 "Tested" means it ran in Hyprland: build, `--target reload`, then exercise the real path
-(binds, dispatchers, config options, layout modes, multi-monitor). `plugin:gloview:debug_logs = 1`
-plus `hyprctl rollinglog` gives the `[gloview]` trace.
+(binds, dispatchers, config options, layout modes, multi-monitor). `plugin:mission_control:debug_logs = 1`
+plus `hyprctl rollinglog` gives the `[mission-control]` trace.
 
 The built ABI must match the running Hyprland exactly — a header/Hyprland version skew
 produces a `.so` that crashes on load. Local builds use the installed Hyprland via
@@ -68,7 +68,7 @@ truly unmaps (verified: `.so` segment count in `/proc/<hypr>/maps` goes 5→0 on
 the same path re-`mmap`s the fresh build. **Do not drop this flag** — without it the entire
 `reload` target is a no-op that looks like it worked. (A separate, real failure mode also
 exists: unloading while the overview is *up* can crash mid-unload, leaving the `.so` mapped
-so `getPluginByPath` refuses the reload — that's what `gloviewunload` below prevents.)
+so `getPluginByPath` refuses the reload — that's what `mission_control_unload` below prevents.)
 
 Gotcha — **a session can stay poisoned for one Hyprland lifetime.** If a *pre-flag* (or any
 `NODELETE`) build was ever loaded, that image is stuck mapped at its path until the Hyprland
@@ -78,14 +78,14 @@ dedups by realpath **and** dev+inode, so a symlink/hardlink won't dodge it — o
 `cp` to a new path, or restarting Hyprland **once**, clears it. After a clean restart the
 first load maps the fixed build and same-path reload works forever after.
 
-What makes the unload succeed is **`hyprctl gloviewunload`** (`Overview::hardClose`), run
+What makes the unload succeed is **`hyprctl mission_control_unload`** (`Overview::hardClose`), run
 first by the `reload` target: an immediate, animation-free teardown that drops all overlay
 state and **cancels the recapture timer** synchronously, then `damage()`s so the next frame
 rebuilds Hyprland's render pass with zero plugin-owned elements (the "flush frame"). Without
 it, unloading while up frees an overlay pass element or the post-drop recapture-timer
 callback — both code that lives in the `.so` — while Hyprland still references them → SEGV,
-or the 150%-CPU IPC-dead spin. (`gloviewclose` only *starts* the close animation, so the
-retired `reload.sh`'s `gloviewclose; sleep 0.4` was a timing *bet* that 360ms+ finished in
+or the 150%-CPU IPC-dead spin. (`mission_control_close` only *starts* the close animation, so the
+retired `reload.sh`'s `mission_control_close; sleep 0.4` was a timing *bet* that 360ms+ finished in
 400ms.) The `reload` target keeps a 0.15s settle for that one flush frame. A plugin crash
 takes down the whole session — prefer testing in a **nested** Hyprland instance.
 
@@ -94,7 +94,7 @@ takes down the whole session — prefer testing in a **nested** Hyprland instanc
 Four translation units, layered by Hyprland coupling:
 
 - **`src/main.cpp`** (~375 lines) — plugin entry points (`PLUGIN_INIT` / `PLUGIN_EXIT` /
-  `PLUGIN_API_VERSION`) and nothing else. Registers all `plugin:gloview:*` config values,
+  `PLUGIN_API_VERSION`) and nothing else. Registers all `plugin:mission_control:*` config values,
   the dispatchers, the `hyprctl` commands, and (Lua config only) the `gloview.*` Lua
   functions. Owns the `g_overview` singleton. Every user-facing entry point exists here in
   **three parallel registrations** — `addDispatcherV2`, `registerHyprCtlCommand`
@@ -112,7 +112,7 @@ Four translation units, layered by Hyprland coupling:
 ### Config plumbing (the Lua trap)
 
 Config values are registered with **`addConfigValueV2`** and the returned `SP<IValue>` is
-kept in `gloview::g_config`; the `cfgInt/cfgFloat/cfgColor/cfgStr` helpers read through
+kept in `missioncontrol::g_config`; the `cfgInt/cfgFloat/cfgColor/cfgStr` helpers read through
 that. **Do not use `HyprlandAPI::getConfigValue()`** — it does not observe values set from
 a Lua `hl.config{}` config, so it returns the registered default and every setting looks
 like it does nothing under a Lua config. Config is read live (per frame); colors are
@@ -194,7 +194,7 @@ instead. Hyprland never sets this flag itself, so **`restoreFill()`** blanket-re
 this path was NOT reproducible with Wayland clients (their `getReportedSize` returns the *acked*
 size, so reported==buffer); it is kept as a guard for X11/edge cases, not the observed bug.
 
-The strip is anchored to any edge via `plugin:gloview:anchor`
+The strip is anchored to any edge via `plugin:mission_control:anchor`
 (`top|bottom|left|right`; horizontal row or vertical column), inset by `strip_offset` (0 =
 flush, no auto bar gap), and the card group (workspace cards + trailing "+"/empty card, plus
 an optional leading "All" card) scrolls as one unit when it overflows the band (mouse wheel →
@@ -259,7 +259,7 @@ slide away). Consequences:
   `exit_on_switch`, you MUST set `m_workspace = m->m_activeWorkspace` before `close()`, else
   deactivate reverts the very switch that triggered the exit. (`switchToWorkspace` only
   changes the displayed workspace, so the poll only fires on genuine external switches.)
-- **`gloview:next` / `prev` / `setworkspace` work both in and out of the overview.** Open:
+- **`mission_control:next` / `prev` / `setworkspace` work both in and out of the overview.** Open:
   they move the *displayed* workspace (like tab / the wheel) and the live desktop follows on
   close. Closed: `stepLiveWorkspace` walks `liveWorkspaceList()` — the same ordered list the
   strip would show, empty tail included — and switches the live desktop immediately.
@@ -300,7 +300,7 @@ slide away). Consequences:
 
 ### Input & navigation
 
-All input lands in `onMouseButton` / `onMouseAxis` / `onKey`, each behind a `plugin:gloview:*`
+All input lands in `onMouseButton` / `onMouseAxis` / `onKey`, each behind a `plugin:mission_control:*`
 toggle (read live). The load-bearing rules:
 
 - **`onKey` is selective, not modal.** It consumes close (`key_close`, default `escape`),
@@ -369,7 +369,7 @@ toggle (read live). The load-bearing rules:
 
 ### Desktop (free-arrange) mode
 
-- **`gloview:desktop` / `toggleDesktop()`** is a **purely visual** free-arrange canvas.
+- **`mission_control:desktop` / `toggleDesktop()`** is a **purely visual** free-arrange canvas.
   It NEVER floats/moves/resizes a real window — earlier versions did
   (`changeFloatingMode` on enter or on drop) and the user's tiled desktop came back
   floating; **do not reintroduce any real-window mutation here.** `layoutTiles()` (desktop
@@ -439,7 +439,7 @@ layer surfaces *on top of* the overview.
   `replayReflow` repurposes `natural` as the glide *start* box, so after any reflow — and
   ALWAYS in desktop mode, entered via `setDesktopMode`→`replayReflow` — `natural` is no longer
   the real position. Without the re-seed the windows visibly **jump on close**.
-- **A new `plugin:gloview:*` option touches four places**: register it in `PLUGIN_INIT`
+- **A new `plugin:mission_control:*` option touches four places**: register it in `PLUGIN_INIT`
   (`addInt`/`addColor`/`addFloat`/`addStr`), read it with the matching `cfg*` using the *same*
   fallback, add the README config-table row, and add it to **both** README example blocks
   (Lua and `hyprland.conf`).

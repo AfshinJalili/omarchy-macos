@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(gloview VERSION "0.3.0" LANGUAGES CXX)
+project(omarchy-macos-mission-control VERSION "0.3.0" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,25 +20,25 @@ pkg_check_modules(GLESV2 REQUIRED IMPORTED_TARGET glesv2)
 # (Debian/Nix), or `luajit` (what Hyprland itself links). Take the first that exists.
 pkg_search_module(LUA REQUIRED lua lua5.4 lua-5.4 lua54 luajit)
 
-add_library(gloview SHARED
+add_library(omarchy-macos-mission-control SHARED
   src/main.cpp
   src/overview.cpp
   src/preview_filter.cpp
   src/layout.cpp
 )
-set_target_properties(gloview PROPERTIES PREFIX "")  # produce gloview.so, not libgloview.so
+set_target_properties(omarchy-macos-mission-control PROPERTIES PREFIX "")  # produce omarchy-macos-mission-control.so, not lib….so
 
-target_include_directories(gloview PRIVATE ${HYPR_DEPS_INCLUDE_DIRS} ${LUA_INCLUDE_DIRS})
+target_include_directories(omarchy-macos-mission-control PRIVATE ${HYPR_DEPS_INCLUDE_DIRS} ${LUA_INCLUDE_DIRS})
 foreach(inc ${HYPR_DEPS_INCLUDE_DIRS})
   if(EXISTS "${inc}/hyprland/src")
-    target_include_directories(gloview PRIVATE "${inc}/hyprland/src")
+    target_include_directories(omarchy-macos-mission-control PRIVATE "${inc}/hyprland/src")
   endif()
 endforeach()
 
-target_link_directories(gloview PRIVATE ${HYPR_DEPS_LIBRARY_DIRS} ${LUA_LIBRARY_DIRS})
-target_link_libraries(gloview PRIVATE ${HYPR_DEPS_LIBRARIES} ${LUA_LIBRARIES} PkgConfig::GLESV2)
+target_link_directories(omarchy-macos-mission-control PRIVATE ${HYPR_DEPS_LIBRARY_DIRS} ${LUA_LIBRARY_DIRS})
+target_link_libraries(omarchy-macos-mission-control PRIVATE ${HYPR_DEPS_LIBRARIES} ${LUA_LIBRARIES} PkgConfig::GLESV2)
 
-install(TARGETS gloview LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(TARGETS omarchy-macos-mission-control LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 # Dev hot-reload (official same-path unload;load):  cmake --build build --target reload
 # This is the upstream-documented dev reload (Hyprland wiki, Plugins/Development):
@@ -49,23 +49,18 @@ install(TARGETS gloview LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 # handle) -> a silent stale reload. With the flag, dlclose truly unmaps and the same path
 # re-mmaps the fresh build. (If you ever load a pre-flag binary, that image sticks NODELETE
 # for the life of the Hyprland process and poisons its path until you restart Hyprland once.)
-# `hyprctl gloviewunload` (Overview::hardClose) first does a synchronous, animation-free
+# `hyprctl mission_control_unload` (Overview::hardClose) first does a synchronous, animation-free
 # teardown + cancels the recapture timer so the unload can't free plugin-owned render/timer
 # state while Hyprland still references it (-> SEGV / 150% IPC-dead spin); the 0.15s settle
 # lets one plugin-free frame flush the render pass. A plugin crash kills the whole session —
 # prefer a nested Hyprland for risky changes. (For installed plugins the user path is
 # `hyprpm enable/disable <name>` + `hyprpm reload`.)
 add_custom_target(reload
-  COMMAND bash -c "hyprctl gloviewunload || true"
+  COMMAND bash -c "hyprctl mission_control_unload || true"
   COMMAND ${CMAKE_COMMAND} -E sleep 0.15
-  COMMAND bash -c "hyprctl plugin unload $<TARGET_FILE:gloview> || true"
-  # Also drop a hyprpm-installed copy: it autoloads at session start and already holds the
-  # shouldRenderWindow hooks, so loading the build path next to it fails to hook (two
-  # instances can't trampoline the same prologue). No-op when not installed/loaded.
-  # ($ENV{USER} resolves at configure time — a literal $USER gets mangled by the Makefile.)
-  COMMAND bash -c "hyprctl plugin unload /var/cache/hyprpm/$ENV{USER}/gloview/gloview.so || true"
-  COMMAND hyprctl plugin load $<TARGET_FILE:gloview>
-  DEPENDS gloview
+  COMMAND bash -c "hyprctl plugin unload $<TARGET_FILE:omarchy-macos-mission-control> || true"
+  COMMAND hyprctl plugin load $<TARGET_FILE:omarchy-macos-mission-control>
+  DEPENDS omarchy-macos-mission-control
   USES_TERMINAL
-  COMMENT "Hot-reloading gloview into the running Hyprland"
+  COMMENT "Hot-reloading Mission Control into the running Hyprland"
 )

@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:-$ROOT/test/swipe.png}"
 before=$(ls "$XDG_RUNTIME_DIR"/hypr 2>/dev/null | sort)
 sockets_before=$(cd "$XDG_RUNTIME_DIR" && ls -d wayland-* 2>/dev/null | grep -v lock | sort)
-HYPRBARS_ROOT="$ROOT" HYPRBARS_PLUGIN="${2:-$ROOT/build/hyprbars-macos.so}" Hyprland -c "$ROOT/test/swipe.lua" >"$ROOT/test/swipe.log" 2>&1 &
+HYPRBARS_ROOT="$ROOT" HYPRBARS_PLUGIN="${2:-$ROOT/build/omarchy-macos-titlebars.so}" Hyprland -c "$ROOT/test/swipe.lua" >"$ROOT/test/swipe.log" 2>&1 &
 pid=$!
 trap 'kill $pid 2>/dev/null || true' EXIT
 sleep 4

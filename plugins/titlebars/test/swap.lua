@@ -2,7 +2,7 @@
 -- test/.swap and reloads, the way a live session moves to this one.
 local root = os.getenv("HYPRBARS_ROOT")
 local OMARCHY = "/usr/lib/omarchy-hyprland-titlebars/titlebars.so"
-local MACOS = root .. "/build/hyprbars-macos.so"
+local MACOS = root .. "/build/omarchy-macos-titlebars.so"
 hl.monitor({ output = "WAYLAND-1", mode = "preferred", position = "auto", scale = "1" })
 hl.config({ animations = { enabled = false }, misc = { disable_hyprland_logo = true, disable_splash_rendering = true } })
 hl.window_rule({ match = { class = ".*" }, float = true, size = "560 160", move = "40 60" })

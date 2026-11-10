@@ -17,7 +17,7 @@ hl.window_rule({ match = { class = ".*" }, float = true, size = docs and "460 11
 hl.window_rule({ match = { title = "Unfocused.*" }, move = docs and "40 30" or "40 60" })
 hl.window_rule({ match = { title = "Focused.*" }, move = docs and "40 190" or "40 260" })
 
-hl.plugin.load(root .. "/build/hyprbars-macos.so")
+hl.plugin.load(root .. "/build/omarchy-macos-titlebars.so")
 if hl.plugin.hyprbars then
   dofile(root .. "/test/style.lua")
 end

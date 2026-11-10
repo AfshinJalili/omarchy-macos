@@ -3,7 +3,7 @@
 #include <hyprland/src/render/pass/PassElement.hpp>
 #include <hyprland/src/render/pass/SurfacePassElement.hpp>
 
-namespace gloview::PreviewFilter {
+namespace missioncontrol::PreviewFilter {
 
 // Draws a live surface through a sampleGrid x sampleGrid box filter. Supported
 // grids are 2 (box4) and 4 (box16).
@@ -13,4 +13,4 @@ namespace gloview::PreviewFilter {
 // Releases GL objects before the plugin is unloaded.
 void reset();
 
-} // namespace gloview::PreviewFilter
+} // namespace missioncontrol::PreviewFilter

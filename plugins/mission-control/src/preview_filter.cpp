@@ -16,7 +16,7 @@
 
 using Render::GL::g_pHyprOpenGL;
 
-namespace gloview::PreviewFilter {
+namespace missioncontrol::PreviewFilter {
 
 // Uses Hyprland's live surface textures directly; no capture or intermediate texture.
 namespace {
@@ -273,7 +273,7 @@ class SurfacePass final : public IPassElement {
     bool needsLiveBlur(Render::CRenderContext&) override { return false; }
     bool needsPrecomputeBlur(Render::CRenderContext&) override { return false; }
     void discard(Render::CRenderContext& ctx) override { CSurfacePassElement(m_data.fallback).discard(ctx); }
-    const char* passName() override { return "GloViewPreviewFilter"; }
+    const char* passName() override { return "MissionControlPreviewFilter"; }
     ePassElementType type() override { return EK_CUSTOM; }
     std::optional<CBox> boundingBox(Render::CRenderContext&) override {
         if (!m_data.fallback.pMonitor || m_data.fallback.pMonitor->m_scale <= 0.0)
@@ -309,4 +309,4 @@ void reset() {
     g_shader = {};
 }
 
-} // namespace gloview::PreviewFilter
+} // namespace missioncontrol::PreviewFilter

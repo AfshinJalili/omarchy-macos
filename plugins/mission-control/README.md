@@ -29,7 +29,7 @@ inputs.gloview = { url = "github:fedsfarm/gloview"; inputs.hyprland.follows = "h
 wayland.windowManager.hyprland = {
   enable = true;
   plugins = [ inputs.gloview.packages.${pkgs.system}.gloview ];
-  settings.bind = [ "SUPER, TAB, gloview:toggle" ];
+  settings.bind = [ "SUPER, TAB, mission_control:toggle" ];
 };
 ```
 
@@ -40,52 +40,52 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-Produces `build/gloview.so`. The ABI must match the running Hyprland exactly —
+Produces `build/omarchy-macos-mission-control.so`. The ABI must match the running Hyprland exactly —
 build against the same headers, or a version skew gives a `.so` that crashes on
 load. While iterating, `cmake --build build --target reload` rebuilds and
 hot-reloads into the running Hyprland.
 
 ## Usage
 
-Dispatchers: `gloview:toggle`, `gloview:open`, `gloview:close`, `gloview:desktop`,
-`gloview:allworkspaces` (the all-workspaces "expo" view — opens into it if closed)
-Or `hyprctl gloview` / `gloviewclose` / `gloviewdesktop` / `gloviewall`
+Dispatchers: `mission_control:toggle`, `mission_control:open`, `mission_control:close`, `mission_control:desktop`,
+`mission_control:allworkspaces` (the all-workspaces "expo" view — opens into it if closed)
+Or `hyprctl mission_control` / `mission_control_close` / `mission_control_desktop` / `mission_control_all`
 
-Workspace navigation: `gloview:next`, `gloview:prev`, `gloview:setworkspace <id>`
-(or `hyprctl gloviewnext` / `gloviewprev`). **Inside** the overview they behave like
+Workspace navigation: `mission_control:next`, `mission_control:prev`, `mission_control:setworkspace <id>`
+(or `hyprctl mission_control_next` / `mission_control_prev`). **Inside** the overview they behave like
 `tab` and the scroll wheel: they move the *displayed* workspace and commit it to the
 live desktop on close. **Outside** it they switch the live desktop right away, walking
 the same ordered list the strip shows — so one pair of binds drives workspaces
 everywhere. With `dynamic_workspaces` on, stepping past the last populated workspace
 lands you on a fresh empty one and the workspace you left behind is reaped if you
-emptied it (`gloview:setworkspace` never creates; it only switches to a workspace that
+emptied it (`mission_control:setworkspace` never creates; it only switches to a workspace that
 already exists on the monitor).
 
 Lua:
 
 ```lua
-hl.bind("SUPER + TAB", hl.plugin.gloview.toggle)
-hl.bind("SUPER + SHIFT + TAB", hl.plugin.gloview.desktop)
-hl.bind("SUPER + CTRL + TAB", hl.plugin.gloview.allworkspaces)
+hl.bind("SUPER + TAB", hl.plugin.mission_control.toggle)
+hl.bind("SUPER + SHIFT + TAB", hl.plugin.mission_control.desktop)
+hl.bind("SUPER + CTRL + TAB", hl.plugin.mission_control.allworkspaces)
 
-hl.bind("SUPER + bracketright", hl.plugin.gloview.next)
-hl.bind("SUPER + bracketleft", hl.plugin.gloview.prev)
-hl.bind("SUPER + 2", function() hl.plugin.gloview.setworkspace(2) end)
+hl.bind("SUPER + bracketright", hl.plugin.mission_control.next)
+hl.bind("SUPER + bracketleft", hl.plugin.mission_control.prev)
+hl.bind("SUPER + 2", function() hl.plugin.mission_control.setworkspace(2) end)
 ```
 
 ```ini
-bind = SUPER, TAB, gloview:toggle
-bind = SUPER SHIFT, TAB, gloview:desktop
-bind = SUPER CTRL, TAB, gloview:allworkspaces
+bind = SUPER, TAB, mission_control:toggle
+bind = SUPER SHIFT, TAB, mission_control:desktop
+bind = SUPER CTRL, TAB, mission_control:allworkspaces
 
-bind = SUPER, bracketright, gloview:next
-bind = SUPER, bracketleft, gloview:prev
-bind = SUPER, 2, gloview:setworkspace, 2
+bind = SUPER, bracketright, mission_control:next
+bind = SUPER, bracketleft, mission_control:prev
+bind = SUPER, 2, mission_control:setworkspace, 2
 ```
 
 ## Config
 
-All keys live under `plugin:gloview:*`. Colors are `0xAARRGGBB` integers.
+All keys live under `plugin:mission_control:*`. Colors are `0xAARRGGBB` integers.
 
 - **`rows`** (default) — macOS-like: previews keep their aspect ratio and are packed into balanced rows, with the row count chosen to make the previews as large as possible. Reads spatially like the real desktop.
 - **`grid`** — uniform cells, one preview centered in each.
@@ -142,7 +142,7 @@ All keys live under `plugin:gloview:*`. Colors are `0xAARRGGBB` integers.
 | `key_workspace` | key names | `1,2,3,4,5,6,7,8,9,0` | Each key switches to the Nth strip card's workspace, for real (slot position = card index) |
 | `exit_on_click` | bool (0/1) | `1` | Click on empty space dismisses the overview |
 | `exit_on_switch` | bool (0/1) | `0` | Dismiss when the live workspace changes underneath (e.g. a keybind) |
-| `show_all_workspaces` | bool (0/1) | `0` | Main area shows every window on the monitor (expo), not just the displayed workspace. Toggle live with `gloview:allworkspaces`, the `key_all_workspaces` key, or the strip's "All" card. Picking a preview here follows it: the overview closes onto that window's workspace |
+| `show_all_workspaces` | bool (0/1) | `0` | Main area shows every window on the monitor (expo), not just the displayed workspace. Toggle live with `mission_control:allworkspaces`, the `key_all_workspaces` key, or the strip's "All" card. Picking a preview here follows it: the overview closes onto that window's workspace |
 | `show_empty` | bool (0/1) | `1` | Keep empty workspaces as strip cards. Has no effect while `dynamic_workspaces` is on (which it is by default) — set that to `0` to get the old always-list-everything strip back |
 | `dynamic_workspaces` | bool (0/1) | `1` | GNOME/hyprnome-style workspaces: only populated workspaces are listed and the strip ends in one empty card (drawn as a workspace, not a `+`). Stepping onto it or dropping a window into it creates it; the *next* empty card only appears once a window actually lands there, so you never see two blank desktops in a row, and emptying it again takes the extra card back away. Workspaces you empty drop off the strip. Forces `show_empty` off. Pair with `autodelete_empty` if you also want workspaces your config pins to be destroyed, not just hidden |
 | `autodelete_empty` | bool (0/1) | `1` | Let Hyprland reap empty workspaces this monitor still pins. Hyprland already destroys unpinned empties on its own, so this only affects ones held by a `persistent:true` rule (and gloview's own abandoned trailing workspace) — the "empty ones get deleted automatically" half of GNOME-style workspaces. **Releasing a persistent workspace lasts until your next config reload — set this to `0` if you keep `persistent:true` workspaces you want left alone.** Skips the displayed workspace, anything visible on any monitor, workspaces holding any window (mapped or not), scratchpads, named workspaces, and other monitors' workspaces |
@@ -157,7 +157,7 @@ All keys live under `plugin:gloview:*`. Colors are `0xAARRGGBB` integers.
 | `hide_top_layers` | bool (0/1) | `0` | Fade out Top layer surfaces (bars, e.g. Waybar) while open |
 | `hide_overlay_layers` | bool (0/1) | `0` | Fade out Overlay layer surfaces (popups/notifications) while open |
 | `above_namespaces` | string | `""` | Comma/space list of layer namespaces to draw *above* the overview (trailing `*` glob; a namespace containing `aboveoverview` always qualifies) |
-| `debug_logs` | bool (0/1) | `0` | Verbose `[gloview]` logging |
+| `debug_logs` | bool (0/1) | `0` | Verbose `[mission-control]` logging |
 
 `top`/`bottom` give a horizontal strip, `left`/`right` a vertical one. `anchor`
 supersedes the older `bar_position` (top/bottom only); set `anchor` and it wins.

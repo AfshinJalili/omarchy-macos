@@ -5,7 +5,7 @@
 #include <cstring>
 #include <numeric>
 
-namespace gloview {
+namespace missioncontrol {
 
 namespace {
 
@@ -193,4 +193,4 @@ Engine parseEngine(const char* s) {
     return Engine::Rows;
 }
 
-} // namespace gloview
+} // namespace missioncontrol

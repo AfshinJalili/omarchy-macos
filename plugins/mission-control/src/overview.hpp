@@ -33,7 +33,7 @@ struct SRenderStageEvent;
 class CFunctionHook;
 class CEventLoopTimer;
 
-namespace gloview {
+namespace missioncontrol {
 
 // Plugin config values registered with `addConfigValueV2` (main.cpp), kept so the
 // cfg* helpers can read them through their V2 `value()` accessor. The deprecated
@@ -72,12 +72,12 @@ class Overview {
     void toggle();
     void open();
     void close();
-    void hardClose(); // immediate, animation-free teardown for the UNLOAD path (hyprctl gloviewunload)
+    void hardClose(); // immediate, animation-free teardown for the UNLOAD path (hyprctl mission_control_unload)
     void toggleDesktop(); // open (or, if already open, switch into) free-arrange desktop mode
     void toggleAllWorkspaces(); // open (or, if already open, toggle) the all-workspaces "expo" main view
 
-    // Workspace navigation, exposed as dispatchers / lua (gloview:next, gloview:prev,
-    // gloview:setworkspace). While the overview is UP these move the DISPLAYED workspace
+    // Workspace navigation, exposed as dispatchers / lua (mission_control:next, mission_control:prev,
+    // mission_control:setworkspace). While the overview is UP these move the DISPLAYED workspace
     // (like tab / the scroll wheel) and the live desktop follows on close. While it is
     // CLOSED they switch the live desktop directly, walking the same ordered list the strip
     // would show — so one keybind drives workspaces both in and out of the overview.
@@ -117,7 +117,7 @@ class Overview {
 
     [[nodiscard]] bool       active() const { return m_active; }
     [[nodiscard]] PHLMONITOR monitor() const { return m_monitor.lock(); }
-    [[nodiscard]] bool       blurEnabled() const; // plugin:gloview:blur != 0 (queried by the pass)
+    [[nodiscard]] bool       blurEnabled() const; // plugin:mission_control:blur != 0 (queried by the pass)
 
   private:
     struct Tile {
@@ -234,8 +234,8 @@ class Overview {
     // free-arrange "desktop" mode: tiles sit at the windows' real positions and a
     // drag floats + repositions the real window instead of snapping to a grid.
     bool                                  m_desktopMode = false;
-    // expo view: -1 = follow plugin:gloview:show_all_workspaces, 0 = runtime-forced off,
-    // 1 = runtime-forced on (the gloview:allworkspaces toggle). Reset to -1 on full close.
+    // expo view: -1 = follow plugin:mission_control:show_all_workspaces, 0 = runtime-forced off,
+    // 1 = runtime-forced on (the mission_control:allworkspaces toggle). Reset to -1 on full close.
     int                                   m_allOverride = -1;
     double                                m_desktopS  = 1.0;  // monitor→preview scale (and its inverse for drops)
     double                                m_desktopOx = 0.0;  // monitor-local preview origin x
@@ -282,7 +282,7 @@ class Overview {
     // horizontal strip (cards in a row); Left/Right give a vertical strip (cards
     // in a column).
     enum class Anchor { Top, Bottom, Left, Right };
-    Anchor   stripAnchor() const;        // plugin:gloview:anchor (falls back to bar_position)
+    Anchor   stripAnchor() const;        // plugin:mission_control:anchor (falls back to bar_position)
     bool     stripHorizontal() const;    // Top or Bottom
     double   stripThickness() const;     // band size perpendicular to its edge (strip_height)
     double   stripOffset() const;        // inset from the anchored edge (strip_offset, 0 default)
@@ -290,16 +290,16 @@ class Overview {
     Vector2D stripSlide(double e) const; // reveal slide-in offset at progress e
     Vector2D stripScroll() const;        // current scroll offset of the card group
     LRect    stripCardAt(size_t i) const;// m_strip[i].card shifted by the current scroll (for hit-testing)
-    bool   showWorkspaceLabels() const; // plugin:gloview:show_workspace_labels
-    bool   showWindowLabels() const;    // plugin:gloview:show_window_labels
+    bool   showWorkspaceLabels() const; // plugin:mission_control:show_workspace_labels
+    bool   showWindowLabels() const;    // plugin:mission_control:show_window_labels
     double stripLabelH() const;         // band reserved above each card for its name (0 when labels are off)
-    bool   dynamicWorkspaces() const;   // plugin:gloview:dynamic_workspaces (gnome/hyprnome-style empty-tail workspaces)
-    void   autodeleteEmpty();           // plugin:gloview:autodelete_empty — let Hyprland reap empty workspaces this monitor still pins
+    bool   dynamicWorkspaces() const;   // plugin:mission_control:dynamic_workspaces (gnome/hyprnome-style empty-tail workspaces)
+    void   autodeleteEmpty();           // plugin:mission_control:autodelete_empty — let Hyprland reap empty workspaces this monitor still pins
     bool   wsHasMappedWindows(const PHLWORKSPACE& ws) const; // a window actually on screen there (listing test)
     bool   workspaceOccupied(const PHLWORKSPACE& ws) const; // any window at all on it (mapped or not)
     int    nextWorkspaceId() const;     // lowest free workspace id (>= 1)
     int    resolveNewId(int wanted) const; // the id a create-on-use card advertised, unless it got taken meanwhile
-    bool   showAllWorkspaces() const; // effective expo state: runtime override (m_allOverride) else plugin:gloview:show_all_workspaces
+    bool   showAllWorkspaces() const; // effective expo state: runtime override (m_allOverride) else plugin:mission_control:show_all_workspaces
     bool   tileBelongs(const PHLWINDOW& w, const PHLMONITOR& m, const PHLWORKSPACE& ws) const; // shared main-area membership test (buildTiles + syncTiles MUST agree)
     bool   onLiveDesktop(const PHLWINDOW& w, const PHLMONITOR& m, const PHLWORKSPACE& live) const; // window is on the desktop the overlay hands over to/from (else Tile::fades)
     void   buildTiles();
@@ -341,7 +341,7 @@ class Overview {
     void   setDesktopMode(bool on);           // flip grid<->canvas while open, gliding the previews (purely visual; never mutates a real window)
     LRect  closeButtonRect(const LRect& tile) const;   // desktop-mode "✕" hit/draw rect for a tile content box
     double newCardScale() const;              // 0..1(+overshoot) pop-in scale for the just-added card
-    float  blurStrength() const;              // plugin:gloview:blur as 0..1 (float); 0 = off
+    float  blurStrength() const;              // plugin:mission_control:blur as 0..1 (float); 0 = off
     // keyboard navigation
     bool   keyMatches(int keycode, uint32_t mods, const char* cfgName, const char* fallback) const; // keycode+held mods ∈ the configured list (names or "shift+tab" combos; empty = disabled)
     int    keyIndex(int keycode, uint32_t mods, const char* cfgName, const char* fallback) const;   // 0-based position of keycode in the list, else -1 (number-row → strip card N)
@@ -353,7 +353,7 @@ class Overview {
     void   replayReflow(std::vector<std::pair<PHLWINDOW, LRect>>& oldBoxes); // glide tiles into new slots after a removal
     void   syncTiles();                       // add/drop tiles when the displayed workspace's window set changes, then reflow
     void   stepWorkspace(int dir);            // scroll-wheel over the main area: show prev/next workspace card
-    // gloview:next / gloview:prev with the overview CLOSED: walk the LIVE desktop through the
+    // mission_control:next / mission_control:prev with the overview CLOSED: walk the LIVE desktop through the
     // same ordered list the strip would show (dynamic_workspaces' empty tail included).
     std::vector<PHLWORKSPACE> liveWorkspaceList(const PHLMONITOR& m) const;
     bool                      stepLiveWorkspace(int dir);
@@ -361,10 +361,10 @@ class Overview {
     void   hideLayers();                      // fade out Top/Overlay layer surfaces (bars) per config
     void   restoreLayers();                   // restore the alphas hideLayers() saved
     void   restoreFill();                     // reset m_fillIgnoreSmall on every window (see renderWindowLive)
-    void   dbg(const std::string& msg) const; // plugin:gloview:debug_logs gated logging
+    void   dbg(const std::string& msg) const; // plugin:mission_control:debug_logs gated logging
     void   damage() const;
 };
 
-} // namespace gloview
+} // namespace missioncontrol
 
-inline gloview::Overview* g_overview = nullptr;
+inline missioncontrol::Overview* g_overview = nullptr;
