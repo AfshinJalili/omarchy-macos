@@ -1,13 +1,12 @@
 #!/bin/bash
 # Install a pacman hook that rebuilds the plugins whenever Hyprland is
-# installed or upgraded, for the user running this script, and remove the hook
-# hyprbars-macos used to install. Remove it with scripts/install-pacman-hook.sh --remove.
+# installed or upgraded, for the user running this script. Remove it with
+# scripts/install-pacman-hook.sh --remove.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK=/etc/pacman.d/hooks/omarchy-macos.hook
 
-sudo rm -f /etc/pacman.d/hooks/hyprbars-macos.hook
 if [[ ${1:-} == --remove ]]; then
   sudo rm -f "$HOOK"
   echo "Removed $HOOK"
