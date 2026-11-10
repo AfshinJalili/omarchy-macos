@@ -18,11 +18,9 @@
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
-#include <hyprland/src/desktop/view/window/Window.hpp>
-#include <hyprland/src/layout/target/WindowTarget.hpp>
-#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
+#include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/desktop/view/LayerSurface.hpp>
-#include <hyprland/src/workspace/HLWorkspace.hpp>
+#include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/helpers/Color.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
@@ -32,9 +30,7 @@
 #include <hyprland/src/helpers/time/Time.hpp>
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
-#include <hyprland/src/render/Context.hpp>
 #include <hyprland/src/render/Renderer.hpp>
-#include <hyprland/src/render/WindowRenderPresentation.hpp>
 #include <hyprland/src/render/Texture.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
 #include <hyprland/src/render/pass/PassElement.hpp>
@@ -43,56 +39,12 @@
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprutils/utils/ScopeGuard.hpp>
-#include <hyprland/src/workspace/RegularWorkspace.hpp>
-#include <hyprland/src/input/Keys.hpp>
 
 using Render::GL::g_pHyprOpenGL;
 
 namespace missioncontrol {
 
 namespace {
-// 0.57 moved persistence onto CRegularWorkspace; special workspaces can't be pinned.
-void setPersistent(const PHLWORKSPACE& ws, bool persistent) {
-    if (const auto rw = dynamicPointerCast<Workspace::CRegularWorkspace>(ws))
-        rw->setPersistent(persistent);
-}
-
-bool isPersistent(const PHLWORKSPACE& ws) {
-    const auto rw = dynamicPointerCast<Workspace::CRegularWorkspace>(ws);
-    return rw && rw->isPersistent();
-}
-
-// 0.57 made workspace ids a variant and dropped the negative ids for special/named
-// workspaces. Mission Control only lists and steps NUMBERED workspaces, so 0 means "not numbered"
-// and every old `m_id <= 0` guard keeps its meaning.
-int wsId(const PHLWORKSPACE& ws) {
-    const auto id = ws ? ws->numberedID() : std::nullopt;
-    return id ? static_cast<int>(*id) : 0;
-}
-
-bool wsSpecial(const PHLWORKSPACE& ws) {
-    return ws && ws->type() == Workspace::eWorkspaceType::SPECIAL;
-}
-
-PHLWORKSPACE findNumbered(int id) {
-    if (id <= 0)
-        return nullptr;
-    return State::workspaceState()->query().numbered(Workspace::SWorkspaceNumberedID{static_cast<uint32_t>(id)}).run();
-}
-
-PHLWORKSPACE createNumbered(int id, const PHLMONITOR& m, bool isEmpty) {
-    if (id <= 0 || !m)
-        return nullptr;
-    return State::workspaceState()->createNumbered(Workspace::SWorkspaceNumberedID{static_cast<uint32_t>(id)}, m, {}, isEmpty);
-}
-
-// HL_MODIFIER_* became an enum class (Input::eKeyboardModifiers) in 0.57; the key matching
-// works on plain bitmasks.
-constexpr uint32_t MOD_SHIFT = static_cast<uint32_t>(Input::HL_MODIFIER_SHIFT);
-constexpr uint32_t MOD_CTRL  = static_cast<uint32_t>(Input::HL_MODIFIER_CTRL);
-constexpr uint32_t MOD_ALT   = static_cast<uint32_t>(Input::HL_MODIFIER_ALT);
-constexpr uint32_t MOD_META  = static_cast<uint32_t>(Input::HL_MODIFIER_META);
-
 
 double nowMs(const std::chrono::steady_clock::time_point& from) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - from).count();
@@ -172,13 +124,13 @@ int labelPt(int ptLogical, double scale) {
 // The box MUST be snapped to the pixel grid: the border shader quantizes each edge's thickness
 // independently from interpolated fragment distances (`smallest > thick` on pixel centers), so a
 // fractional edge renders one px thicker/thinner than the others.
-void renderRing(Render::CRenderContext& ctx, const CBox& boxPx, const CHyprColor& col, double roundPx, double thickLg) {
+void renderRing(const CBox& boxPx, const CHyprColor& col, double roundPx, double thickLg) {
     if (thickLg < 1.0 || boxPx.w <= 0.0 || boxPx.h <= 0.0 || col.a <= 0.0)
         return;
     CBox snapped = boxPx;
     snapped.round();
     const Config::CGradientValueData grad(col);
-    g_pHyprOpenGL->renderBorder(ctx, snapped, grad, {.round = static_cast<int>(roundPx), .roundingPower = 2.F, .borderSize = static_cast<int>(std::round(thickLg)), .a = 1.F});
+    g_pHyprOpenGL->renderBorder(snapped, grad, {.round = static_cast<int>(roundPx), .roundingPower = 2.F, .borderSize = static_cast<int>(std::round(thickLg)), .a = 1.F});
 }
 
 LRect fitInside(const LRect& outer, double aspect) {
@@ -230,11 +182,11 @@ bool hasStablePreviewUV(const PHLWINDOW& window, const SP<CWLSurfaceResource>& s
         return false;
 
     const auto& drag = g_layoutManager->dragController();
-    if (drag && drag->target().get() == window->windowTarget().get() && drag->mode() >= MBIND_RESIZE)
+    if (drag && drag->target() == window->m_target && drag->mode() >= MBIND_RESIZE)
         return false;
 
     const auto& state = surface->m_current;
-    if (window->backend().isX11() && state.viewport.hasSource)
+    if (window->m_isX11 && state.viewport.hasSource)
         return false;
     if (texBoxLogical.size() != state.size)
         return false;
@@ -244,10 +196,10 @@ bool hasStablePreviewUV(const PHLWINDOW& window, const SP<CWLSurfaceResource>& s
         expectedPx = (state.viewport.destination * monitor->m_scale).round();
     else if (state.viewport.hasSource)
         expectedPx = (state.viewport.source.size() * monitor->m_scale).round();
-    else if (mainSurface && window->backend().reportedSize() != state.size)
+    else if (mainSurface && window->getReportedSize() != state.size)
         expectedPx = (state.size * monitor->m_scale).round();
     else if (mainSurface)
-        expectedPx = (window->backend().reportedSize() * monitor->m_scale).round();
+        expectedPx = (window->getReportedSize() * monitor->m_scale).round();
     else
         expectedPx = texBoxPx.size();
 
@@ -285,9 +237,9 @@ void fixFractionalScaleUV(const SP<CWLSurfaceResource>& surface, const PHLMONITO
 // Render a window's LIVE surface tree scaled into `destPx`, clipped to `clipPx`
 // (both monitor PIXEL coords) via real CSurfacePassElements. No crop rect to drift,
 // so immune to snapshots' stale/mis-cropped tiles; works on hidden workspaces.
-void renderWindowLive(Render::CRenderContext& ctx, const PHLWINDOW& w, const PHLMONITOR& mon, const CBox& destPx, const CBox& clipPx, float alpha, const Time::steady_tp& when,
+void renderWindowLive(const PHLWINDOW& w, const PHLMONITOR& mon, const CBox& destPx, const CBox& clipPx, float alpha, const Time::steady_tp& when,
                       int previewFilterGrid, double roundSlotPx = 0.0) {
-    if (!w || !mon || !w->mapped() || !w->wlSurface() || !w->wlSurface()->resource())
+    if (!w || !mon || !w->m_isMapped || !w->wlSurface() || !w->wlSurface()->resource())
         return;
     if (!(destPx.w > 0 && destPx.h > 0))
         return;
@@ -318,7 +270,7 @@ void renderWindowLive(Render::CRenderContext& ctx, const PHLWINDOW& w, const PHL
     if (!(scaleMod > 0.F))
         return;
 
-    const Vector2D logicalTL = pos + w->presentation().floatingOffset();
+    const Vector2D logicalTL = pos + w->m_floatingOffset;
     const Vector2D scaledTL  = (logicalTL - mon->m_position) * mon->m_scale;
     const Vector2D translate = destPx.pos() / scaleMod - scaledTL;
 
@@ -327,9 +279,9 @@ void renderWindowLive(Render::CRenderContext& ctx, const PHLWINDOW& w, const PHL
     modif.modifs.push_back({Render::SRenderModifData::eRenderModifType::RMOD_TYPE_SCALE, std::any(scaleMod)});
     modif.enabled = true;
 
-    Render::IHyprRenderer::addPassElement(ctx, makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{.renderModif = modif}));
-    Hyprutils::Utils::CScopeGuard reset([&ctx] {
-        Render::IHyprRenderer::addPassElement(ctx, makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{.renderModif = Render::SRenderModifData{}}));
+    g_pHyprRenderer->m_renderPass.add(makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{.renderModif = modif}));
+    Hyprutils::Utils::CScopeGuard reset([] {
+        g_pHyprRenderer->m_renderPass.add(makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{.renderModif = Render::SRenderModifData{}}));
     });
 
     g_pHyprRenderer->damageWindow(w);
@@ -346,7 +298,7 @@ void renderWindowLive(Render::CRenderContext& ctx, const PHLWINDOW& w, const PHL
     data.alpha          = std::clamp(alpha, 0.F, 1.F);
     data.decorate       = false;
     data.rounding       = roundSlotPx > 0.0 ? roundSlotPx * mon->m_scale : 0.0;
-    data.roundingPower  = w->presentation().roundingPower();
+    data.roundingPower  = w->roundingPower();
     data.blur           = false;
     data.pWindow        = w;
     data.clipBox        = clipPx;
@@ -354,7 +306,7 @@ void renderWindowLive(Render::CRenderContext& ctx, const PHLWINDOW& w, const PHL
     data.surfaceCounter = 0;
 
     w->wlSurface()->resource()->breadthfirst(
-        [&data, &w, &clipPx, &modif, previewFilterGrid, &ctx](SP<CWLSurfaceResource> s, const Vector2D& offset, void*) {
+        [&data, &w, &clipPx, &modif, previewFilterGrid](SP<CWLSurfaceResource> s, const Vector2D& offset, void*) {
             if (!s || !s->m_current.texture || s->m_current.size.x < 1 || s->m_current.size.y < 1)
                 return;
             data.localPos    = offset;
@@ -363,7 +315,7 @@ void renderWindowLive(Render::CRenderContext& ctx, const PHLWINDOW& w, const PHL
             data.mainSurface = s == w->wlSurface()->resource();
 
             if (previewFilterGrid == 0 || data.texture->m_type == Render::TEXTURE_EXTERNAL) {
-                Render::IHyprRenderer::addPassElement(ctx, makeUnique<CSurfacePassElement>(data));
+                g_pHyprRenderer->m_renderPass.add(makeUnique<CSurfacePassElement>(data));
                 data.surfaceCounter++;
                 return;
             }
@@ -383,19 +335,9 @@ void renderWindowLive(Render::CRenderContext& ctx, const PHLWINDOW& w, const PHL
             const auto& viewport = s->m_current.viewport;
             const auto& bufferSize = s->m_current.bufferSize;
             if (viewport.hasSource && bufferSize.x > 0.0 && bufferSize.y > 0.0) {
-                // Same as 0.57's calculateUVForSurface: the source rect is in surface-local
-                // coords, so apply buffer scale and the inverse buffer transform first
-                // (viewporter order), or a scale-2 / flipped buffer samples the wrong region.
-                const Vector2D trc = s->m_current.transform % 2 == 1 ? Vector2D{bufferSize.y, bufferSize.x} : bufferSize;
-                auto           src = viewport.source;
-                src.scale(s->m_current.scale);
-                src.transform(Math::wlTransformToHyprutils(Math::invertTransform(s->m_current.transform)), trc.x, trc.y);
-                uvMin = Vector2D{src.x / bufferSize.x, src.y / bufferSize.y};
-                uvMax = Vector2D{(src.x + src.width) / bufferSize.x, (src.y + src.height) / bufferSize.y};
-                if (uvMax.x < 0.00001 || uvMax.y < 0.00001) {
-                    uvMin = Vector2D{0.0, 0.0};
-                    uvMax = Vector2D{1.0, 1.0};
-                }
+                uvMin = Vector2D{viewport.source.x / bufferSize.x, viewport.source.y / bufferSize.y};
+                uvMax = Vector2D{(viewport.source.x + viewport.source.width) / bufferSize.x,
+                                 (viewport.source.y + viewport.source.height) / bufferSize.y};
             }
             if (stableUV)
                 fixFractionalScaleUV(s, data.pMonitor, projectedSizePx, uvMin, uvMax);
@@ -404,11 +346,11 @@ void renderWindowLive(Render::CRenderContext& ctx, const PHLWINDOW& w, const PHL
             const bool minifying = sampledPixels.x > targetPx.w * 1.05 || sampledPixels.y > targetPx.h * 1.05;
             // Native-sized textures stay on Hyprland's normal path.
             if (stableUV && minifying && targetPx.w > 1.0 && targetPx.h > 1.0) {
-                Render::IHyprRenderer::addPassElement(ctx, PreviewFilter::makePass(
+                g_pHyprRenderer->m_renderPass.add(PreviewFilter::makePass(
                     data, targetPx, clipPx, uvMin, uvMax, data.mainSurface && !data.dontRound ? data.rounding : 0.0,
                     previewFilterGrid));
             } else {
-                Render::IHyprRenderer::addPassElement(ctx, makeUnique<CSurfacePassElement>(data));
+                g_pHyprRenderer->m_renderPass.add(makeUnique<CSurfacePassElement>(data));
             }
             data.surfaceCounter++;
         },
@@ -458,10 +400,10 @@ Vector2D labelSize(const SP<Render::ITexture>& tex, double bakeScale) {
 // SNAPPED to whole pixels: renderTexture samples linearly, so a fractional origin (card
 // centering, slide offset, fractional scale) blends neighbouring texels and the text goes soft
 // again despite the 1:1 bake.
-void drawLabelPill(Render::CRenderContext& ctx, const SP<Render::ITexture>& tex, const Vector2D& textSz, const LRect& pill, double pillA, double textA, double s) {
-    g_pHyprOpenGL->renderRect(ctx, pxb(pill, s), argb(0xcc11151c, pillA), {.round = pxr(pill.h / 2.0, s)});
+void drawLabelPill(const SP<Render::ITexture>& tex, const Vector2D& textSz, const LRect& pill, double pillA, double textA, double s) {
+    g_pHyprOpenGL->renderRect(pxb(pill, s), argb(0xcc11151c, pillA), {.round = pxr(pill.h / 2.0, s)});
     const CBox textPx{std::round((pill.cx() - textSz.x / 2.0) * s), std::round((pill.cy() - textSz.y / 2.0) * s), std::round(textSz.x * s), std::round(textSz.y * s)};
-    g_pHyprOpenGL->renderTexture(ctx, tex, textPx, {.a = static_cast<float>(textA)});
+    g_pHyprOpenGL->renderTexture(tex, textPx, {.a = static_cast<float>(textA)});
 }
 
 // Strip workspace-label pill: text padding, and the gap between the pill bottom and the card
@@ -492,23 +434,23 @@ class COverlayPass final : public IPassElement {
     enum class Phase { Back, MainFront, Mid, StripFront, FlyBack, DragBack, Front };
     COverlayPass(Overview* o, Phase phase) : m_owner(o), m_phase(phase) {}
 
-    std::vector<UP<IPassElement>> draw(Render::CRenderContext& ctx) override {
+    std::vector<UP<IPassElement>> draw() override {
         if (!m_owner)
             return {};
         switch (m_phase) {
             case Phase::Back:
-                m_owner->renderBackdrop(ctx);
-                m_owner->renderPrevPreviews(ctx); // outgoing workspace, under the incoming one
-                m_owner->renderPreviews(ctx); // main tile chrome; surfaces queued right after
+                m_owner->renderBackdrop();
+                m_owner->renderPrevPreviews(); // outgoing workspace, under the incoming one
+                m_owner->renderPreviews(); // main tile chrome; surfaces queued right after
                 break;
-            case Phase::MainFront: m_owner->renderPreviewRings(ctx); break; // over the main surfaces
-            case Phase::Mid: m_owner->renderStrip(ctx); break;              // strip chrome; surfaces queued after
-            case Phase::StripFront: m_owner->renderStripRings(ctx); break;  // over the card surfaces
-            case Phase::FlyBack: m_owner->renderFlyTile(ctx); break;        // moved-window flight chrome; surface queued after
-            case Phase::DragBack: m_owner->renderDragTile(ctx); break;      // dragged tile chrome; surface queued after
+            case Phase::MainFront: m_owner->renderPreviewRings(); break; // over the main surfaces
+            case Phase::Mid: m_owner->renderStrip(); break;              // strip chrome; surfaces queued after
+            case Phase::StripFront: m_owner->renderStripRings(); break;  // over the card surfaces
+            case Phase::FlyBack: m_owner->renderFlyTile(); break;        // moved-window flight chrome; surface queued after
+            case Phase::DragBack: m_owner->renderDragTile(); break;      // dragged tile chrome; surface queued after
             case Phase::Front:
-                m_owner->renderDragRing(ctx); // over the dragged surface
-                m_owner->renderCursorOnTop(ctx);
+                m_owner->renderDragRing(); // over the dragged surface
+                m_owner->renderCursorOnTop();
                 break;
         }
         return {};
@@ -516,8 +458,8 @@ class COverlayPass final : public IPassElement {
 
     // Back (backdrop) and Mid (strip band) draw blurred rects. Hyprland refreshes the
     // live-blur framebuffer only from elements reporting true; false → stale blur residue.
-    bool                needsLiveBlur(Render::CRenderContext& ctx) override { return (m_phase == Phase::Back || m_phase == Phase::Mid) && m_owner && m_owner->blurEnabled(); }
-    bool                needsPrecomputeBlur(Render::CRenderContext& ctx) override { return false; }
+    bool                needsLiveBlur() override { return (m_phase == Phase::Back || m_phase == Phase::Mid) && m_owner && m_owner->blurEnabled(); }
+    bool                needsPrecomputeBlur() override { return false; }
     // Occlusion culling must be off while the overview is up. The queued preview surfaces
     // (CSurfacePassElement) report boundingBox/opaqueRegion at the window's REAL footprint —
     // they can't see our translate+scale render-modif — so once the open animation settles
@@ -528,11 +470,11 @@ class COverlayPass final : public IPassElement {
     // subtraction in simplify()); with blur = 0 the overview drew for the open animation,
     // then collapsed to bare wallpaper/stale frames. No perf cost: the overview damages the
     // whole monitor every frame anyway, so there is nothing useful for simplify() to cull.
-    bool                disableSimplification(Render::CRenderContext& ctx) override { return true; }
-    bool                undiscardable(Render::CRenderContext& ctx) override { return true; }
+    bool                disableSimplification() override { return true; }
+    bool                undiscardable() override { return true; }
     const char*         passName() override { return "MissionControlOverlayPass"; }
     ePassElementType    type() override { return EK_CUSTOM; }
-    std::optional<CBox> boundingBox(Render::CRenderContext& ctx) override {
+    std::optional<CBox> boundingBox() override {
         const auto m = m_owner ? m_owner->monitor() : nullptr;
         if (!m)
             return std::nullopt;
@@ -557,7 +499,7 @@ Overview::~Overview() {
     restoreLayers(); // never leave a bar stuck at alpha 0 if we're torn down mid-hide
     restoreFill();   // never leave a window's surface stuck stretching its small buffer
     if (const auto ws = m_newWs.lock()) // don't leak a persistent workspace either
-        setPersistent(ws, false);
+        ws->setPersistent(false);
     m_newWs.reset();
     m_tiles.clear();
     m_strip.clear();
@@ -586,7 +528,7 @@ Overview::~Overview() {
 bool Overview::initialize() {
     auto& events = Event::bus()->m_events;
 
-    m_renderStageL = events.render.stage.listen([this](const Event::SRenderStageEvent& ev) { renderStage(ev); });
+    m_renderStageL = events.render.stage.listen([this](eRenderStage stage) { renderStage(stage); });
     m_mouseButtonL = events.input.mouse.button.listen([this](const IPointer::SButtonEvent& event, Event::SCallbackInfo& info) {
         const auto copied = event;
         if (onMouseButton(copied))
@@ -753,7 +695,7 @@ void Overview::autodeleteEmpty() {
     // Copy, not the live view: setPersistent(false) can drop the last ref and destroy the
     // workspace mid-iteration.
     for (const auto& ws : State::workspaceState()->workspacesCopy()) {
-        if (!ws || wsId(ws) <= 0) // leave scratchpads and named workspaces alone (wsId 0)
+        if (!ws || ws->m_isSpecialWorkspace || ws->m_id <= 0) // leave scratchpads and named (-1337…) workspaces alone
             continue;
         if (ws->m_monitor.lock() != m) // only this monitor's — other outputs aren't ours to prune
             continue;
@@ -765,15 +707,15 @@ void Overview::autodeleteEmpty() {
         // was added. Releasing it when it is genuinely abandoned is switchToWorkspace's job.
         if (ws == held)
             continue;
-        if (ws->visible())           // active on some monitor
+        if (ws->isVisible())           // active on some monitor
             continue;
         if (workspaceOccupied(ws))
             continue;
-        if (!isPersistent(ws))       // nothing pinning it; Hyprland reaps it without our help
+        if (!ws->isPersistent())       // nothing pinning it; Hyprland reaps it without our help
             continue;
 
-        setPersistent(ws, false);
-        dbg("autodelete: released empty workspace " + std::to_string(wsId(ws)));
+        ws->setPersistent(false);
+        dbg("autodelete: released empty workspace " + std::to_string(ws->m_id));
     }
 }
 
@@ -784,7 +726,7 @@ bool Overview::wsHasMappedWindows(const PHLWORKSPACE& ws) const {
     if (!ws)
         return false;
     for (const auto& win : Desktop::windowState()->windows())
-        if (win && win->mapped() && !win->isHidden() && win->m_workspace == ws)
+        if (win && win->m_isMapped && !win->isHidden() && win->m_workspace == ws)
             return true;
     return false;
 }
@@ -803,7 +745,7 @@ bool Overview::workspaceOccupied(const PHLWORKSPACE& ws) const {
 
 int Overview::nextWorkspaceId() const {
     int id = 1;
-    while (findNumbered(id))
+    while (State::workspaceState()->query().id(id).run())
         ++id;
     return id;
 }
@@ -811,7 +753,7 @@ int Overview::nextWorkspaceId() const {
 // A create-on-use card advertises the id it will take (dynamic_workspaces labels the trailing
 // card with it), so honour that id unless something claimed it between the build and the click.
 int Overview::resolveNewId(int wanted) const {
-    if (wanted > 0 && !findNumbered(wanted))
+    if (wanted > 0 && !State::workspaceState()->query().id(wanted).run())
         return wanted;
     return nextWorkspaceId();
 }
@@ -1082,7 +1024,7 @@ void Overview::hardClose() {
     restoreLayers(); // never leave a bar stuck at alpha 0 if we tear down mid-hide
     restoreFill();   // never leave a window's surface stuck stretching its small buffer
     if (const auto ws = m_newWs.lock()) // don't leak a held-persistent "+"-created workspace
-        setPersistent(ws, false);
+        ws->setPersistent(false);
     m_newWs.reset();
 
     m_active            = false;
@@ -1120,13 +1062,13 @@ bool Overview::showAllWorkspaces() const {
 // (per-frame add/remove detector) MUST agree, else syncTiles sees a phantom diff every frame
 // and reflow-churns.
 bool Overview::tileBelongs(const PHLWINDOW& w, const PHLMONITOR& m, const PHLWORKSPACE& ws) const {
-    if (!w || !w->mapped() || w->isHidden())
+    if (!w || !w->m_isMapped || w->isHidden())
         return false;
     const auto wws = w->m_workspace;
     if (!wws)
         return false;
     if (showAllWorkspaces()) { // expo: every window living on this monitor, any workspace
-        if (wsSpecial(wws) && cfgInt("plugin:mission_control:show_special", 0) == 0)
+        if (wws->m_isSpecialWorkspace && cfgInt("plugin:mission_control:show_special", 0) == 0)
             return false;
         return wws->m_monitor.lock() == m;
     }
@@ -1183,9 +1125,9 @@ void Overview::buildTiles() {
             const auto w = t.win.lock();
             if (!w || !showWindowLabels())
                 continue;
-            std::string text = w->metadata().title();
+            std::string text = w->m_title;
             if (text.empty())
-                text = w->metadata().appID();
+                text = w->m_class;
             if (text.size() > 80)
                 text = text.substr(0, 79) + "…";
             // Re-bake with maxWidth only when it overflows: a set Pango width right-aligns RTL
@@ -1229,24 +1171,24 @@ void Overview::buildStrip() {
         const auto ws = wref.lock();
         if (!ws || ws->m_monitor.lock() != m)
             continue;
-        if (wsSpecial(ws)) {
+        if (ws->m_isSpecialWorkspace) {
             if (showSpecial && wsHasWindows(ws)) // a scratchpad is only meaningful when populated
                 wss.push_back(ws);
             continue;
         }
-        if (wsId(ws) <= 0)
+        if (ws->m_id <= 0)
             continue;
         if (!showEmpty && ws != cur && !wsHasWindows(ws)) // hide empties (keep the displayed one)
             continue;
         wss.push_back(ws);
     }
 
-    if (cur && wsId(cur) > 0 && cur->m_monitor.lock() == m &&
+    if (cur && !cur->m_isSpecialWorkspace && cur->m_id > 0 && cur->m_monitor.lock() == m &&
         std::none_of(wss.begin(), wss.end(), [&](const PHLWORKSPACE& ws) { return ws == cur; })) {
         wss.push_back(cur);
     }
 
-    std::sort(wss.begin(), wss.end(), [](const PHLWORKSPACE& a, const PHLWORKSPACE& b) { return wsId(a) < wsId(b); });
+    std::sort(wss.begin(), wss.end(), [](const PHLWORKSPACE& a, const PHLWORKSPACE& b) { return a->m_id < b->m_id; });
 
     // optional leading "All workspaces" card (toggles expo). Pushed FIRST so it sits at the
     // strip's leading edge; skipped wherever cards are treated as workspaces (see isAll guards).
@@ -1260,10 +1202,10 @@ void Overview::buildStrip() {
     for (const auto& ws : wss) {
         StripItem it;
         it.ws     = ws;
-        it.id     = wsId(ws);
+        it.id     = ws->m_id;
         it.active = (ws == cur);
         for (const auto& w : Desktop::windowState()->windows()) {
-            if (!w || !w->mapped() || w->isHidden() || w->m_workspace != ws)
+            if (!w || !w->m_isMapped || w->isHidden() || w->m_workspace != ws)
                 continue;
             const auto p = w->positionAnimation()->goal();
             const auto s = w->sizeAnimation()->goal();
@@ -1285,7 +1227,7 @@ void Overview::buildStrip() {
     // one you were standing on looked duplicated. When the highest-id listed workspace is
     // already empty it IS the tail, so no create-on-use card is appended; putting a window on
     // it makes the next one appear (and emptying it again takes it back away).
-    const bool haveEmptyTail = dynamic && !wss.empty() && wsId(wss.back()) > 0 && !wsHasWindows(wss.back());
+    const bool haveEmptyTail = dynamic && !wss.empty() && wss.back()->m_id > 0 && !wsHasWindows(wss.back());
     StripItem  plus;
     plus.isPlus = true;
     plus.isNew  = dynamic;
@@ -1296,7 +1238,7 @@ void Overview::buildStrip() {
         for (const auto& s : m_strip)
             if (!s.isAll && s.id >= tail)
                 tail = s.id + 1;
-        while (findNumbered(tail))
+        while (State::workspaceState()->query().id(tail).run())
             ++tail;
         plus.id = tail;
     }
@@ -1311,7 +1253,7 @@ void Overview::buildStrip() {
         std::string text = "All workspaces";
         if (!it.isAll) {
             const auto ws = it.ws.lock();
-            std::string nm = ws ? ws->displayName() : std::to_string(it.id);
+            std::string nm = ws ? ws->m_name : std::to_string(it.id);
             const bool numeric = !nm.empty() && std::all_of(nm.begin(), nm.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)); });
             text = numeric ? ("Workspace " + nm) : nm;
         }
@@ -1487,9 +1429,9 @@ void Overview::captureSnapshots() {
     // Only snapshot presentable windows: a window mid-move/resize can be transiently
     // unmapped/workspace-less, and makeSnapshot then null-derefs the surface → crash.
     const auto snap = [this](const PHLWINDOW& w) -> bool {
-        if (w && w->mapped() && w->m_workspace && !w->isHidden()) {
+        if (w && w->m_isMapped && w->m_workspace && !w->isHidden()) {
             const auto     ws          = w->m_workspace;
-            const bool     wsVis       = ws->visible();
+            const bool     wsVis       = ws->m_visible;
             const bool     wsForce     = ws->m_forceRendering;
             // Save BOTH value AND goal: setValueAndWarp(x) also sets goal:=x, so restoring
             // only value() pins a mid-animation workspace at a stale goal. That corruption
@@ -1502,7 +1444,7 @@ void Overview::captureSnapshots() {
             // m_forceRendering is THE flag makeSnapshot honours to paint a window on a
             // non-active workspace; without it the window renders empty → black/blank thumb.
             // Only WARP (never assign the goal), else the goal thrash corrupts the workspace.
-            ws->setVisible(true);
+            ws->m_visible        = true;
             ws->m_forceRendering = true;
             ws->m_renderOffset->setValueAndWarp(Vector2D{});
             ws->m_alpha->setValueAndWarp(1.0F);
@@ -1521,7 +1463,7 @@ void Overview::captureSnapshots() {
                 m_snapFB[w.get()] = fb;
             m_captureWin.reset();
 
-            ws->setVisible(wsVis);
+            ws->m_visible        = wsVis;
             ws->m_forceRendering = wsForce;
             // Warp back to the captured value, then re-aim at the original goal so an
             // in-flight slide resumes to its true destination (operator= no-ops if settled).
@@ -1846,24 +1788,22 @@ void Overview::updateAnimation() {
 
 // ---- render -----------------------------------------------------------------
 
-void Overview::renderStage(const Event::SRenderStageEvent& ev) {
+void Overview::renderStage(eRenderStage stage) {
     if (!m_active)
         return;
     // captureSnapshots drives a nested render pass that re-emits render-stage events; without
     // this guard we'd re-add the overlay pass mid-snapshot → reentrant render → SEGV.
     if (m_capturing)
         return;
-    const auto rm = ev.monitor;
+    const auto rm = g_pHyprRenderer->m_renderData.pMonitor.lock();
     const auto m  = m_monitor.lock();
     // RENDER_LAST_MOMENT is after the top/overlay layers (bars), so the overview paints
     // over them instead of the bar bleeding on top.
     if (!rm || !m || rm != m)
         return;
 
-    // 0.57 hands the frame's render context to the listener; PRE/POST carry none.
-    if (ev.stage != RENDER_LAST_MOMENT || !ev.context)
+    if (stage != RENDER_LAST_MOMENT)
         return;
-    auto& ctx = ev.context->get();
 
     const auto previewFilter = cfgStr("plugin:mission_control:preview_filter", "box4");
     m_previewFilterGrid = previewFilter == "box16" ? 4 : previewFilter == "box4" ? 2 : 0;
@@ -1886,26 +1826,27 @@ void Overview::renderStage(const Event::SRenderStageEvent& ev) {
     // surfaces → flying-tile chrome + surface → drag chrome → drag surface → cursor. The
     // immediate-mode chrome is split across COverlayPass phases so the queued surfaces slot
     // between them.
-    Render::IHyprRenderer::addPassElement(ctx, makeUnique<COverlayPass>(this, COverlayPass::Phase::Back));
-    renderPrevWindows(ctx); // outgoing workspace's surfaces, under the incoming set
-    renderMainWindows(ctx);
-    Render::IHyprRenderer::addPassElement(ctx, makeUnique<COverlayPass>(this, COverlayPass::Phase::MainFront));
-    Render::IHyprRenderer::addPassElement(ctx, makeUnique<COverlayPass>(this, COverlayPass::Phase::Mid));
-    renderStripWindows(ctx);
-    Render::IHyprRenderer::addPassElement(ctx, makeUnique<COverlayPass>(this, COverlayPass::Phase::StripFront));
+    auto& pass = g_pHyprRenderer->m_renderPass;
+    pass.add(makeUnique<COverlayPass>(this, COverlayPass::Phase::Back));
+    renderPrevWindows(); // outgoing workspace's surfaces, under the incoming set
+    renderMainWindows();
+    pass.add(makeUnique<COverlayPass>(this, COverlayPass::Phase::MainFront));
+    pass.add(makeUnique<COverlayPass>(this, COverlayPass::Phase::Mid));
+    renderStripWindows();
+    pass.add(makeUnique<COverlayPass>(this, COverlayPass::Phase::StripFront));
     // a window flying into its new workspace card passes OVER the strip, so it lands on top
     if (!m_flying.empty()) {
-        Render::IHyprRenderer::addPassElement(ctx, makeUnique<COverlayPass>(this, COverlayPass::Phase::FlyBack));
-        renderFlyWindow(ctx);
+        pass.add(makeUnique<COverlayPass>(this, COverlayPass::Phase::FlyBack));
+        renderFlyWindow();
     }
     const bool dragging = m_dragging && m_pressTile >= 0 && m_pressTile < static_cast<int>(m_tiles.size());
     if (dragging) {
-        Render::IHyprRenderer::addPassElement(ctx, makeUnique<COverlayPass>(this, COverlayPass::Phase::DragBack));
-        renderDragWindow(ctx);
+        pass.add(makeUnique<COverlayPass>(this, COverlayPass::Phase::DragBack));
+        renderDragWindow();
     }
-    Render::IHyprRenderer::addPassElement(ctx, makeUnique<COverlayPass>(this, COverlayPass::Phase::Front));
+    pass.add(makeUnique<COverlayPass>(this, COverlayPass::Phase::Front));
 
-    renderAboveLayers(ctx); // opted-in layer surfaces (e.g. the live-input HUD) sit on top of the overview
+    renderAboveLayers(); // opted-in layer surfaces (e.g. the live-input HUD) sit on top of the overview
 
     // Final close frame: the overlay (opaque previews at natural positions) is now queued,
     // covering the windows shouldRenderWindow suppressed earlier this frame. Flip off NOW,
@@ -1924,7 +1865,7 @@ void Overview::renderStage(const Event::SRenderStageEvent& ev) {
     damage();
 }
 
-void Overview::renderBackdrop(Render::CRenderContext& ctx) const {
+void Overview::renderBackdrop() const {
     const auto m = m_monitor.lock();
     if (!m)
         return;
@@ -1933,10 +1874,10 @@ void Overview::renderBackdrop(Render::CRenderContext& ctx) const {
     if (col.a <= 0.0)
         return;
     const double s = m->m_scale;
-    g_pHyprOpenGL->renderRect(ctx, pxb(CBox(0, 0, m->m_size.x, m->m_size.y), s), col, {.blur = blurEnabled(), .blurA = static_cast<float>(e) * blurStrength()});
+    g_pHyprOpenGL->renderRect(pxb(CBox(0, 0, m->m_size.x, m->m_size.y), s), col, {.blur = blurEnabled(), .blurA = static_cast<float>(e) * blurStrength()});
 }
 
-void Overview::renderStrip(Render::CRenderContext& ctx) const {
+void Overview::renderStrip() const {
     const auto m = m_monitor.lock();
     if (!m || m_strip.empty())
         return;
@@ -1951,7 +1892,7 @@ void Overview::renderStrip(Render::CRenderContext& ctx) const {
     const LRect    bandR   = stripBand();
     const Vector2D slide   = stripSlide(e);  // slide the whole strip in from its edge
     const Vector2D scroll  = stripScroll();  // scroll the card group along the band
-    g_pHyprOpenGL->renderRect(ctx, pxb(CBox(bandR.x + slide.x, bandR.y + slide.y, bandR.w, bandR.h), s), bandCol, {.blur = blur, .blurA = static_cast<float>(e) * blurStrength()});
+    g_pHyprOpenGL->renderRect(pxb(CBox(bandR.x + slide.x, bandR.y + slide.y, bandR.w, bandR.h), s), bandCol, {.blur = blur, .blurA = static_cast<float>(e) * blurStrength()});
 
     const int  cardRound  = cfgInt("plugin:mission_control:strip_card_round", 10);
     const auto cardBg     = argb(cfgColor("plugin:mission_control:strip_card_color", 0x3a0e131c), e);
@@ -1970,15 +1911,15 @@ void Overview::renderStrip(Render::CRenderContext& ctx) const {
         // card rings are drawn later, over the live card previews (renderStripRings)
         const bool actLike = it.active || (allWs && allCardShown && it.isAll); // filled + thick ring
 
-        g_pHyprOpenGL->renderRect(ctx, pxb(c, s), actLike ? activeBg : cardBg, {.round = pxr(cardRound, s)});
+        g_pHyprOpenGL->renderRect(pxb(c, s), actLike ? activeBg : cardBg, {.round = pxr(cardRound, s)});
 
         if (it.isPlus && !it.isNew) {
             // draw a centered plus
             const double t  = std::max(2.0, card.h * 0.04);
             const double L  = std::min(card.w, card.h) * 0.34;
             const double cx = card.cx(), cy = card.cy();
-            g_pHyprOpenGL->renderRect(ctx, pxb(CBox(cx - L / 2, cy - t / 2, L, t), s), plusCol, {.round = pxr(t / 2, s)});
-            g_pHyprOpenGL->renderRect(ctx, pxb(CBox(cx - t / 2, cy - L / 2, t, L), s), plusCol, {.round = pxr(t / 2, s)});
+            g_pHyprOpenGL->renderRect(pxb(CBox(cx - L / 2, cy - t / 2, L, t), s), plusCol, {.round = pxr(t / 2, s)});
+            g_pHyprOpenGL->renderRect(pxb(CBox(cx - t / 2, cy - L / 2, t, L), s), plusCol, {.round = pxr(t / 2, s)});
         } else if (it.isAll) {
             // 2x2 grid-of-squares glyph = "all windows / every workspace"
             const double pad = std::min(card.w, card.h) * 0.26;
@@ -1988,14 +1929,14 @@ void Overview::renderStrip(Render::CRenderContext& ctx) const {
             const double gx  = card.x + pad, gy = card.y + pad;
             for (int r = 0; r < 2; ++r)
                 for (int col = 0; col < 2; ++col)
-                    g_pHyprOpenGL->renderRect(ctx, pxb(CBox(gx + col * (cw + cg), gy + r * (ch + cg), cw, ch), s), plusCol, {.round = pxr(2, s)});
+                    g_pHyprOpenGL->renderRect(pxb(CBox(gx + col * (cw + cg), gy + r * (ch + cg), cw, ch), s), plusCol, {.round = pxr(2, s)});
         } else {
             // Opaque backing per window slot: the live surface (queued on top by
             // renderStripWindows) may carry transparency, so without it the translucent
             // card band over the blurred backdrop bleeds through.
             for (const auto& sw : it.wins) {
                 const auto w = sw.win.lock();
-                if (!w || !w->mapped() || w->isHidden())
+                if (!w || !w->m_isMapped || w->isHidden())
                     continue;
                 if (isFlying(w))
                     continue; // still arriving; renderFlyTile is drawing it
@@ -2015,7 +1956,7 @@ void Overview::renderStrip(Render::CRenderContext& ctx) const {
                 const double winRound = stripWindowRound(cardRound, std::max(2.0, sw.rel.w * card.w), std::max(2.0, sw.rel.h * card.h), cropped);
                 // the surface rounds with the window's own roundingPower; a default-2 arc here
                 // pokes out past a flatter one (decoration:rounding_power < 2).
-                g_pHyprOpenGL->renderRect(ctx, pxb(vis, s), argb(0xff14181f, e), {.round = pxr(winRound, s), .roundingPower = w->presentation().roundingPower()});
+                g_pHyprOpenGL->renderRect(pxb(vis, s), argb(0xff14181f, e), {.round = pxr(winRound, s), .roundingPower = w->roundingPower()});
             }
         }
 
@@ -2026,14 +1967,14 @@ void Overview::renderStrip(Render::CRenderContext& ctx) const {
         if (showWorkspaceLabels() && it.label && it.label->m_size.x > 0) {
             const Vector2D sz = labelSize(it.label, it.labelScale);
             const double   pw = sz.x + 2 * STRIP_PILL_PAD_X, ph = sz.y + 2 * STRIP_PILL_PAD_Y;
-            drawLabelPill(ctx, it.label, sz, LRect{card.cx() - pw / 2.0, card.y - STRIP_PILL_GAP - ph, pw, ph}, actLike ? e : e * 0.25, actLike ? e : e * 0.75, s);
+            drawLabelPill(it.label, sz, LRect{card.cx() - pw / 2.0, card.y - STRIP_PILL_GAP - ph, pw, ph}, actLike ? e : e * 0.25, actLike ? e : e * 0.75, s);
         }
     }
 }
 
 // Queues the LIVE surfaces for every strip card, layered above the BACK chrome (card
 // backings) but under the FRONT chrome (drag tile, cursor).
-void Overview::renderStripWindows(Render::CRenderContext& ctx) const {
+void Overview::renderStripWindows() const {
     const auto m = m_monitor.lock();
     if (!m || m_strip.empty())
         return;
@@ -2054,7 +1995,7 @@ void Overview::renderStripWindows(Render::CRenderContext& ctx) const {
         card.y += slide.y + scroll.y;
         for (const auto& sw : it.wins) {
             const auto w = sw.win.lock();
-            if (!w || !w->mapped() || w->isHidden())
+            if (!w || !w->m_isMapped || w->isHidden())
                 continue;
             if (isFlying(w))
                 continue; // still arriving; renderFlyWindow is drawing it
@@ -2075,7 +2016,7 @@ void Overview::renderStripWindows(Render::CRenderContext& ctx) const {
             // corner arc would sit mid-card with nothing behind it.
             const bool   cropped    = !roughly(clipPx.w, slotPx.w, 0.01) || !roughly(clipPx.h, slotPx.h, 0.01);
             const double stripRound = stripWindowRound(cfgInt("plugin:mission_control:strip_card_round", 10), slot.w, slot.h, cropped);
-            renderWindowLive(ctx, w, m, slotPx, clipPx, static_cast<float>(e), when, m_previewFilterGrid, stripRound);
+            renderWindowLive(w, m, slotPx, clipPx, static_cast<float>(e), when, m_previewFilterGrid, stripRound);
         }
     }
 }
@@ -2096,7 +2037,7 @@ LRect Overview::stripCardBox(size_t i, const Vector2D& slide, const Vector2D& sc
 }
 
 // Active / hover / expo card rings, drawn OVER the cards' live window previews.
-void Overview::renderStripRings(Render::CRenderContext& ctx) const {
+void Overview::renderStripRings() const {
     const auto m = m_monitor.lock();
     if (!m || m_strip.empty())
         return;
@@ -2124,7 +2065,7 @@ void Overview::renderStripRings(Render::CRenderContext& ctx) const {
             continue;
         const auto&  lc = ring ? activeLine : hoverLine;
         const double t  = ring ? activeSize : hoverSize;
-        renderRing(ctx, pxb(stripCardBox(i, slide, scroll), s), lc, cardRound * s, t);
+        renderRing(pxb(stripCardBox(i, slide, scroll), s), lc, cardRound * s, t);
     }
 }
 
@@ -2137,7 +2078,7 @@ LRect Overview::closeButtonRect(const LRect& lb) const {
     return LRect{cx - r, cy - r, 2 * r, 2 * r};
 }
 
-void Overview::drawPreviewTile(Render::CRenderContext& ctx, size_t i, const LRect& slot, bool lift) const {
+void Overview::drawPreviewTile(size_t i, const LRect& slot, bool lift) const {
     const auto m = m_monitor.lock();
     if (!m || i >= m_tiles.size())
         return;
@@ -2148,7 +2089,7 @@ void Overview::drawPreviewTile(Render::CRenderContext& ctx, size_t i, const LRec
 
     const auto& t = m_tiles[i];
     const auto  w = t.win.lock();
-    if (!w || !w->mapped() || w->isHidden())
+    if (!w || !w->m_isMapped || w->isHidden())
         return;
 
     // Tile box fitted to the window's real aspect; live surface fills it at uniform scale so
@@ -2159,7 +2100,7 @@ void Overview::drawPreviewTile(Render::CRenderContext& ctx, size_t i, const LRec
     // the backdrop blur and reads as a murky halo.
     const double range = lift ? 30.0 : 16.0;
     const double dy    = lift ? 14.0 : 6.0;
-    g_pHyprOpenGL->renderRoundedShadow(ctx, pxb(LRect{lb.x, lb.y + dy, lb.w, lb.h}, s), pxr(round, s), 2.F, static_cast<int>(range * s), Config::CGradientValueData(shadowCol), e * 0.9, Render::SWindowRenderPresentation{});
+    g_pHyprOpenGL->renderRoundedShadow(pxb(LRect{lb.x, lb.y + dy, lb.w, lb.h}, s), pxr(round, s), 2.F, static_cast<int>(range * s), shadowCol, e * 0.9);
 
     const bool framed   = (static_cast<int>(i) == m_hovered || lift);
     const bool selected = (static_cast<int>(i) == m_selected) && !lift; // keyboard-nav cursor
@@ -2173,20 +2114,20 @@ void Overview::drawPreviewTile(Render::CRenderContext& ctx, size_t i, const LRec
     const LRect bb{lb.x + 1.0, lb.y + 1.0, std::max(0.0, lb.w - 2.0), std::max(0.0, lb.h - 2.0)};
     // A fading tile (Tile::fades) takes its backing with it — in on open, out on close — else
     // the dark slab shows up before the surface or outlives it.
-    g_pHyprOpenGL->renderRect(ctx, pxb(bb, s), argb(cfgColor("plugin:mission_control:preview_bg", 0xff14181f), t.fades ? e : 1.0), {.round = pxr(round, s)});
+    g_pHyprOpenGL->renderRect(pxb(bb, s), argb(cfgColor("plugin:mission_control:preview_bg", 0xff14181f), t.fades ? e : 1.0), {.round = pxr(round, s)});
 
     // desktop (canvas) mode: a "✕" close button in the top-right of every preview.
     // The glyph is baked at pt*scale (see labelPt): work in logical px so the fit
     // computation and pxb() map 1:1 back onto texels.
     if (m_desktopMode && !lift) {
         const LRect br = closeButtonRect(lb);
-        g_pHyprOpenGL->renderRect(ctx, pxb(br, s), argb(cfgColor("plugin:mission_control:close_button_color", 0xe6e23b3b), e), {.round = pxr(br.h / 2.0, s)});
+        g_pHyprOpenGL->renderRect(pxb(br, s), argb(cfgColor("plugin:mission_control:close_button_color", 0xe6e23b3b), e), {.round = pxr(br.h / 2.0, s)});
         if (m_closeGlyph && m_closeGlyph->m_size.x > 0) {
             const Vector2D gsz = labelSize(m_closeGlyph, m_closeGlyphScale);
             const double   gw = gsz.x, gh = gsz.y;
             const double gs = std::min((br.w * 0.62) / std::max(1.0, gw), (br.h * 0.62) / std::max(1.0, gh));
             const double dw = gw * gs, dh = gh * gs;
-            g_pHyprOpenGL->renderTexture(ctx, m_closeGlyph, pxb(CBox(br.x + (br.w - dw) / 2.0, br.y + (br.h - dh) / 2.0, dw, dh), s), {.a = static_cast<float>(e)});
+            g_pHyprOpenGL->renderTexture(m_closeGlyph, pxb(CBox(br.x + (br.w - dw) / 2.0, br.y + (br.h - dh) / 2.0, dw, dh), s), {.a = static_cast<float>(e)});
         }
     }
 
@@ -2201,18 +2142,18 @@ void Overview::drawPreviewTile(Render::CRenderContext& ctx, size_t i, const LRec
         // is UB and aborts under _GLIBCXX_ASSERTIONS (Arch's default makepkg flags).
         const double px = std::max(6.0, std::min(lb.cx() - pw / 2.0, m->m_size.x - pw - 6.0));
         const double py = std::min(lb.y + lb.h + 10.0, m->m_size.y - ph - 6.0);
-        drawLabelPill(ctx, t.label, sz, LRect{px, py, pw, ph}, e, e, s);
+        drawLabelPill(t.label, sz, LRect{px, py, pw, ph}, e, e, s);
     }
 }
 
 // Hover / keyboard-selection ring for one tile, drawn OVER its live surface. Hover wins over the
 // coincident selection ring.
-void Overview::drawPreviewRing(Render::CRenderContext& ctx, size_t i, const LRect& slot, bool lift) const {
+void Overview::drawPreviewRing(size_t i, const LRect& slot, bool lift) const {
     const auto m = m_monitor.lock();
     if (!m || i >= m_tiles.size())
         return;
     const auto w = m_tiles[i].win.lock();
-    if (!w || !w->mapped() || w->isHidden())
+    if (!w || !w->m_isMapped || w->isHidden())
         return;
 
     const bool framed   = (static_cast<int>(i) == m_hovered || lift);
@@ -2226,23 +2167,23 @@ void Overview::drawPreviewRing(Render::CRenderContext& ctx, size_t i, const LRec
     const double th    = framed ? std::max(1, cfgInt("plugin:mission_control:hover_border_size", 3)) : std::max(1, cfgInt("plugin:mission_control:select_border_size", 3));
     const auto   col   = framed ? argb(cfgColor("plugin:mission_control:hover_border", 0xf0ffffff), e) : argb(cfgColor("plugin:mission_control:select_border", 0xf066ccff), e);
 
-    renderRing(ctx, pxb(tileContentBox(i, slot), s), col, round * s, th);
+    renderRing(pxb(tileContentBox(i, slot), s), col, round * s, th);
 }
 
-void Overview::renderPreviewRings(Render::CRenderContext& ctx) const {
+void Overview::renderPreviewRings() const {
     const int dragIdx = (m_dragging && m_pressTile >= 0 && m_pressTile < static_cast<int>(m_tiles.size())) ? m_pressTile : -1;
     for (size_t i = 0; i < m_tiles.size(); ++i) {
         if (static_cast<int>(i) == dragIdx)
             continue;
-        drawPreviewRing(ctx, i, currentBox(m_tiles[i], static_cast<int>(i)), false);
+        drawPreviewRing(i, currentBox(m_tiles[i], static_cast<int>(i)), false);
     }
 }
 
-void Overview::renderDragRing(Render::CRenderContext& ctx) const {
+void Overview::renderDragRing() const {
     const int dragIdx = (m_dragging && m_pressTile >= 0 && m_pressTile < static_cast<int>(m_tiles.size())) ? m_pressTile : -1;
     if (dragIdx < 0)
         return;
-    drawPreviewRing(ctx, static_cast<size_t>(dragIdx), dragBox(), true);
+    drawPreviewRing(static_cast<size_t>(dragIdx), dragBox(), true);
 }
 
 // Fit `slot` to the window's real aspect so the live surface fills it exactly (uniform scale).
@@ -2277,7 +2218,7 @@ LRect Overview::dragBox() const {
     return LRect{m_dragX - (m_grabDX + (w - base.w) / 2.0), m_dragY - (m_grabDY + (h - base.h) / 2.0), w, h};
 }
 
-void Overview::renderPreviews(Render::CRenderContext& ctx) const {
+void Overview::renderPreviews() const {
     const int dragIdx = (m_dragging && m_pressTile >= 0 && m_pressTile < static_cast<int>(m_tiles.size())) ? m_pressTile : -1;
     // Fading tiles (Tile::fades) go first, so the handoff set paints over them (same order as
     // renderMainWindows).
@@ -2287,13 +2228,13 @@ void Overview::renderPreviews(Render::CRenderContext& ctx) const {
                 continue; // the dragged tile floats over the strip; drawn later in renderDragTile()
             if (m_tiles[i].fades != fading)
                 continue;
-            drawPreviewTile(ctx, i, currentBox(m_tiles[i], static_cast<int>(i)), false);
+            drawPreviewTile(i, currentBox(m_tiles[i], static_cast<int>(i)), false);
         }
 }
 
 // Queues the LIVE surfaces for the main-area tiles (except the dragged one), above their
 // chrome (the Back phase) and under the strip. Mirrors renderStripWindows.
-void Overview::renderMainWindows(Render::CRenderContext& ctx) const {
+void Overview::renderMainWindows() const {
     const auto m = m_monitor.lock();
     if (!m)
         return;
@@ -2314,17 +2255,17 @@ void Overview::renderMainWindows(Render::CRenderContext& ctx) const {
             if (static_cast<int>(i) == dragIdx || m_tiles[i].fades != fading)
                 continue;
             const auto w = m_tiles[i].win.lock();
-            if (!w || !w->mapped() || w->isHidden())
+            if (!w || !w->m_isMapped || w->isHidden())
                 continue;
             const LRect lb = tileContentBox(i, currentBox(m_tiles[i], static_cast<int>(i)));
             const CBox  px(lb.x * scale, lb.y * scale, lb.w * scale, lb.h * scale);
-            renderWindowLive(ctx, w, m, px, px, fading ? static_cast<float>(e) : 1.0F, when, m_previewFilterGrid, round);
+            renderWindowLive(w, m, px, px, fading ? static_cast<float>(e) : 1.0F, when, m_previewFilterGrid, round);
         }
 }
 
 // Chrome for the outgoing workspace's tiles during a switch slide: shadow + opaque backing
 // only. No labels, rings or close buttons — the set is leaving and takes no input.
-void Overview::renderPrevPreviews(Render::CRenderContext& ctx) const {
+void Overview::renderPrevPreviews() const {
     const auto m = m_monitor.lock();
     if (!m || m_prevTiles.empty())
         return;
@@ -2337,17 +2278,17 @@ void Overview::renderPrevPreviews(Render::CRenderContext& ctx) const {
 
     for (const auto& t : m_prevTiles) {
         const auto w = t.win.lock();
-        if (!w || !w->mapped() || w->isHidden())
+        if (!w || !w->m_isMapped || w->isHidden())
             continue;
         const LRect lb{t.target.x + off.x, t.target.y + off.y, t.target.w, t.target.h};
-        g_pHyprOpenGL->renderRoundedShadow(ctx, pxb(LRect{lb.x, lb.y + 6.0, lb.w, lb.h}, s), pxr(round, s), 2.F, static_cast<int>(16.0 * s), Config::CGradientValueData(shadowCol), e * 0.9, Render::SWindowRenderPresentation{});
+        g_pHyprOpenGL->renderRoundedShadow(pxb(LRect{lb.x, lb.y + 6.0, lb.w, lb.h}, s), pxr(round, s), 2.F, static_cast<int>(16.0 * s), shadowCol, e * 0.9);
         // same 1px inset as drawPreviewTile: keeps the backing under the over-covered surface
         const LRect bb{lb.x + 1.0, lb.y + 1.0, std::max(0.0, lb.w - 2.0), std::max(0.0, lb.h - 2.0)};
-        g_pHyprOpenGL->renderRect(ctx, pxb(bb, s), bg, {.round = pxr(round, s)});
+        g_pHyprOpenGL->renderRect(pxb(bb, s), bg, {.round = pxr(round, s)});
     }
 }
 
-void Overview::renderPrevWindows(Render::CRenderContext& ctx) const {
+void Overview::renderPrevWindows() const {
     const auto m = m_monitor.lock();
     if (!m || m_prevTiles.empty())
         return;
@@ -2358,16 +2299,16 @@ void Overview::renderPrevWindows(Render::CRenderContext& ctx) const {
 
     for (const auto& t : m_prevTiles) {
         const auto w = t.win.lock();
-        if (!w || !w->mapped() || w->isHidden())
+        if (!w || !w->m_isMapped || w->isHidden())
             continue;
         const CBox px((t.target.x + off.x) * scale, (t.target.y + off.y) * scale, t.target.w * scale, t.target.h * scale);
-        renderWindowLive(ctx, w, m, px, px, 1.0F, when, m_previewFilterGrid, round);
+        renderWindowLive(w, m, px, px, 1.0F, when, m_previewFilterGrid, round);
     }
 }
 
 // Chrome for a window flying into the workspace card it was just dropped on. Fades out as it
 // lands, by which point the card's own preview has taken over.
-void Overview::renderFlyTile(Render::CRenderContext& ctx) const {
+void Overview::renderFlyTile() const {
     const auto m = m_monitor.lock();
     if (!m || m_flying.empty())
         return;
@@ -2381,7 +2322,7 @@ void Overview::renderFlyTile(Render::CRenderContext& ctx) const {
 
     for (const auto& f : m_flying) {
         const auto w = f.win.lock();
-        if (!w || !w->mapped() || w->isHidden())
+        if (!w || !w->m_isMapped || w->isHidden())
             continue;
         const LRect  lb    = flyBox(f);
         const double round = flyRound(lb);
@@ -2389,13 +2330,13 @@ void Overview::renderFlyTile(Render::CRenderContext& ctx) const {
         // full-size drop shadow on a card-sized tile is what made the landing look pasted on.
         const double range = std::clamp(std::min(lb.w, lb.h) * 0.14, 3.0, 26.0) * lift;
         if (range >= 1.0)
-            g_pHyprOpenGL->renderRoundedShadow(ctx, pxb(LRect{lb.x, lb.y + range * 0.45, lb.w, lb.h}, s), pxr(round, s), 2.F, static_cast<int>(range * s), Config::CGradientValueData(shadowCol), lift * 0.9, Render::SWindowRenderPresentation{});
+            g_pHyprOpenGL->renderRoundedShadow(pxb(LRect{lb.x, lb.y + range * 0.45, lb.w, lb.h}, s), pxr(round, s), 2.F, static_cast<int>(range * s), shadowCol, lift * 0.9);
         const LRect bb{lb.x + 1.0, lb.y + 1.0, std::max(0.0, lb.w - 2.0), std::max(0.0, lb.h - 2.0)};
-        g_pHyprOpenGL->renderRect(ctx, pxb(bb, s), bg, {.round = pxr(round, s)});
+        g_pHyprOpenGL->renderRect(pxb(bb, s), bg, {.round = pxr(round, s)});
     }
 }
 
-void Overview::renderFlyWindow(Render::CRenderContext& ctx) const {
+void Overview::renderFlyWindow() const {
     const auto m = m_monitor.lock();
     if (!m || m_flying.empty())
         return;
@@ -2404,22 +2345,22 @@ void Overview::renderFlyWindow(Render::CRenderContext& ctx) const {
 
     for (const auto& f : m_flying) {
         const auto w = f.win.lock();
-        if (!w || !w->mapped() || w->isHidden())
+        if (!w || !w->m_isMapped || w->isHidden())
             continue;
         const LRect lb = flyBox(f);
         const CBox  px(lb.x * scale, lb.y * scale, lb.w * scale, lb.h * scale);
-        renderWindowLive(ctx, w, m, px, px, 1.0F, when, m_previewFilterGrid, flyRound(lb)); // opaque all the way — see renderFlyTile
+        renderWindowLive(w, m, px, px, 1.0F, when, m_previewFilterGrid, flyRound(lb)); // opaque all the way — see renderFlyTile
     }
 }
 
-void Overview::renderDragTile(Render::CRenderContext& ctx) const {
+void Overview::renderDragTile() const {
     const int dragIdx = (m_dragging && m_pressTile >= 0 && m_pressTile < static_cast<int>(m_tiles.size())) ? m_pressTile : -1;
     if (dragIdx < 0)
         return;
-    drawPreviewTile(ctx, static_cast<size_t>(dragIdx), dragBox(), true); // chrome; surface queued in renderDragWindow
+    drawPreviewTile(static_cast<size_t>(dragIdx), dragBox(), true); // chrome; surface queued in renderDragWindow
 }
 
-void Overview::renderDragWindow(Render::CRenderContext& ctx) const {
+void Overview::renderDragWindow() const {
     const int dragIdx = (m_dragging && m_pressTile >= 0 && m_pressTile < static_cast<int>(m_tiles.size())) ? m_pressTile : -1;
     if (dragIdx < 0)
         return;
@@ -2427,13 +2368,13 @@ void Overview::renderDragWindow(Render::CRenderContext& ctx) const {
     if (!m)
         return;
     const auto w = m_tiles[dragIdx].win.lock();
-    if (!w || !w->mapped() || w->isHidden())
+    if (!w || !w->m_isMapped || w->isHidden())
         return;
     const double e     = eased();
     const double scale = m->m_scale;
     const LRect  lb    = tileContentBox(static_cast<size_t>(dragIdx), dragBox());
     const CBox   px(lb.x * scale, lb.y * scale, lb.w * scale, lb.h * scale);
-    renderWindowLive(ctx, w, m, px, px, static_cast<float>(e), Time::steadyNow(), m_previewFilterGrid,
+    renderWindowLive(w, m, px, px, static_cast<float>(e), Time::steadyNow(), m_previewFilterGrid,
                      static_cast<double>(cfgInt("plugin:mission_control:preview_round", 12)));
 }
 
@@ -2466,7 +2407,7 @@ bool Overview::isAboveLayer(const std::string& ns) const {
 // Re-render opted-in layer surfaces ON TOP of the overview: queue real CSurfacePassElements
 // after the overview chrome so they composite last, above the backdrop/strip.
 // (IHyprRenderer::renderLayer is protected in 0.55.4, hence this immediate-mode queue.)
-void Overview::renderAboveLayers(Render::CRenderContext& ctx) const {
+void Overview::renderAboveLayers() const {
     const auto m = m_monitor.lock();
     if (!m || !g_pHyprRenderer)
         return;
@@ -2474,7 +2415,7 @@ void Overview::renderAboveLayers(Render::CRenderContext& ctx) const {
     for (int idx : {2, 3}) {
         for (const auto& ref : m->m_layerSurfaceLayers[idx]) {
             const auto ls = ref.lock();
-            if (!ls || !ls->mapped() || !ls->wlSurface() || !ls->wlSurface()->resource())
+            if (!ls || !ls->m_mapped || !ls->wlSurface() || !ls->wlSurface()->resource())
                 continue;
             if (!isAboveLayer(ls->m_namespace))
                 continue;
@@ -2501,14 +2442,14 @@ void Overview::renderAboveLayers(Render::CRenderContext& ctx) const {
 
             const auto root = ls->wlSurface()->resource();
             root->breadthfirst(
-                [&data, &root, &ctx](SP<CWLSurfaceResource> s, const Vector2D& offset, void*) {
+                [&data, &root](SP<CWLSurfaceResource> s, const Vector2D& offset, void*) {
                     if (!s || !s->m_current.texture || s->m_current.size.x < 1 || s->m_current.size.y < 1)
                         return;
                     data.localPos    = offset;
                     data.texture     = s->m_current.texture;
                     data.surface     = s;
                     data.mainSurface = s == root;
-                    Render::IHyprRenderer::addPassElement(ctx, makeUnique<CSurfacePassElement>(data));
+                    g_pHyprRenderer->m_renderPass.add(makeUnique<CSurfacePassElement>(data));
                     data.surfaceCounter++;
                 },
                 nullptr);
@@ -2516,7 +2457,7 @@ void Overview::renderAboveLayers(Render::CRenderContext& ctx) const {
     }
 }
 
-void Overview::renderCursorOnTop(Render::CRenderContext& ctx) const {
+void Overview::renderCursorOnTop() const {
     // Hyprland composites the software cursor before our RENDER_LAST_MOMENT pass, so the
     // backdrop paints over it. Redraw on top so the pointer stays visible while up.
     const auto m = m_monitor.lock();
@@ -2527,7 +2468,7 @@ void Overview::renderCursorOnTop(Render::CRenderContext& ctx) const {
         return;
     const CBox g  = Pointer::mgr()->getCursorBoxGlobal();
     const CBox lb(g.x - m->m_position.x, g.y - m->m_position.y, g.w, g.h);
-    g_pHyprOpenGL->renderTexture(ctx, tex, pxb(lb, m->m_scale), {.a = 1.0F});
+    g_pHyprOpenGL->renderTexture(tex, pxb(lb, m->m_scale), {.a = 1.0F});
 }
 
 // ---- input ------------------------------------------------------------------
@@ -2793,7 +2734,7 @@ void Overview::dropOnWorkspace(const PHLWINDOW& w, const StripItem& it, const LR
     PHLWORKSPACE target;
     if (it.isPlus) { // the "+" card, or dynamic_workspaces' trailing empty one
         const int id   = resolveNewId(it.id);
-        target         = createNumbered(id, m, false); // a window moves in, so not created empty
+        target         = State::workspaceState()->create(id, m->m_id);
         m_newCardId    = id; // pop the new card in
         m_newCardStart = std::chrono::steady_clock::now();
         m_newCardAnim  = true;
@@ -2821,7 +2762,6 @@ void Overview::dropOnWorkspace(const PHLWINDOW& w, const StripItem& it, const LR
     }
 
     Desktop::globalWindowController()->moveWindowToWorkspace(w, target);
-    target->ready(); // 0.57: emits workspace.created once set up; no-op on an existing workspace
 
     // switch_on_drop: follow the window to its new workspace instead of staying put.
     if (follow) {
@@ -2893,7 +2833,7 @@ void Overview::switchToWorkspace(const StripItem& it) {
 
     PHLWORKSPACE ws;
     if (it.isPlus) {
-        ws = createNumbered(resolveNewId(it.id), m, true);
+        ws = State::workspaceState()->create(resolveNewId(it.id), m->m_id, "", false);
         if (!ws)
             return;
         // A brand-new empty workspace is reaped within a frame or two unless it is focused,
@@ -2901,10 +2841,9 @@ void Overview::switchToWorkspace(const StripItem& it) {
         // its tiles survive. deactivate() releases the hold; the previous held one is let go
         // here, which is what makes dynamic_workspaces' abandoned empties disappear again.
         if (const auto old = m_newWs.lock(); old && old != ws)
-            setPersistent(old, false);
-        setPersistent(ws, true);
+            old->setPersistent(false);
+        ws->setPersistent(true);
         m_newWs = ws;
-        ws->ready();
     } else if (const auto target = it.ws.lock()) {
         ws = target;
         if (ws == cur)
@@ -2914,7 +2853,7 @@ void Overview::switchToWorkspace(const StripItem& it) {
 
     // Slide direction from strip order — the cards are sorted by id, so the ids decide it.
     // A freshly created workspace always takes the highest id, hence "forward".
-    beginWsSlide((!cur || wsId(ws) >= wsId(cur)) ? 1 : -1);
+    beginWsSlide((!cur || ws->m_id >= cur->m_id) ? 1 : -1);
 
     // Display the target inside the overview without changing the live desktop yet;
     // captureSnapshots() force-renders inactive workspaces without a real slide.
@@ -2926,7 +2865,7 @@ void Overview::switchToWorkspace(const StripItem& it) {
     // user asked for that workspace, so it stays until close.
     if (dynamicWorkspaces()) {
         if (const auto held = m_newWs.lock(); held && held != ws && !workspaceOccupied(held)) {
-            setPersistent(held, false);
+            held->setPersistent(false);
             m_newWs.reset();
         }
     }
@@ -3014,7 +2953,7 @@ std::vector<PHLWORKSPACE> Overview::liveWorkspaceList(const PHLMONITOR& m) const
 
     for (const auto& wref : State::workspaceState()->workspaces()) {
         const auto ws = wref.lock();
-        if (!ws || wsId(ws) <= 0) // scratchpads and named workspaces (wsId 0) aren't stepped through
+        if (!ws || ws->m_isSpecialWorkspace || ws->m_id <= 0) // scratchpads and named (-1337…) aren't stepped through
             continue;
         if (ws->m_monitor.lock() != m)
             continue;
@@ -3022,10 +2961,10 @@ std::vector<PHLWORKSPACE> Overview::liveWorkspaceList(const PHLMONITOR& m) const
             continue;
         wss.push_back(ws);
     }
-    if (cur && wsId(cur) > 0 && std::none_of(wss.begin(), wss.end(), [&](const PHLWORKSPACE& ws) { return ws == cur; }))
+    if (cur && cur->m_id > 0 && !cur->m_isSpecialWorkspace && std::none_of(wss.begin(), wss.end(), [&](const PHLWORKSPACE& ws) { return ws == cur; }))
         wss.push_back(cur);
 
-    std::sort(wss.begin(), wss.end(), [](const PHLWORKSPACE& a, const PHLWORKSPACE& b) { return wsId(a) < wsId(b); });
+    std::sort(wss.begin(), wss.end(), [](const PHLWORKSPACE& a, const PHLWORKSPACE& b) { return a->m_id < b->m_id; });
     return wss;
 }
 
@@ -3079,17 +3018,16 @@ bool Overview::stepLiveWorkspace(int dir) {
     // …the create-on-use tail: take the id right after the last one, like buildStrip.
     int id = 1;
     for (const auto& ws : wss)
-        if (wsId(ws) >= id)
-            id = wsId(ws) + 1;
-    while (findNumbered(id))
+        if (ws->m_id >= id)
+            id = ws->m_id + 1;
+    while (State::workspaceState()->query().id(id).run())
         ++id;
-    const auto fresh = createNumbered(id, m, true);
+    const auto fresh = State::workspaceState()->create(id, m->m_id, "", false);
     if (!fresh)
         return false;
     // No persistence pin needed here (unlike the overview's held tail): changeWorkspace makes
     // it the active workspace immediately, which is enough to keep it alive.
     land(m, fresh);
-    fresh->ready();
     dbg("stepped onto new workspace " + std::to_string(id));
     return true;
 }
@@ -3098,8 +3036,6 @@ bool Overview::stepLiveWorkspace(int dir) {
 // on this monitor so the dispatcher isn't at the mercy of show_empty / dynamic_workspaces
 // hiding the target's card.
 bool Overview::setWorkspace(int id) {
-    if (id <= 0) // numbered workspaces only: scratchpad cards carry id 0 (see wsId)
-        return false;
     // Closed: switch the live desktop, like mission_control:next/prev now do. Only to a workspace that
     // already exists on this monitor — creating one on demand is Hyprland's own `workspace`
     // dispatcher's job.
@@ -3107,7 +3043,7 @@ bool Overview::setWorkspace(int id) {
         const auto m = activeMonitor();
         if (!m)
             return false;
-        const auto ws = findNumbered(id);
+        const auto ws = State::workspaceState()->query().id(id).run();
         if (!ws || ws->m_monitor.lock() != m)
             return false;
         if (ws != m->m_activeWorkspace)
@@ -3127,7 +3063,7 @@ bool Overview::setWorkspace(int id) {
     const auto m = m_monitor.lock();
     if (!m)
         return false;
-    const auto ws = findNumbered(id);
+    const auto ws = State::workspaceState()->query().id(id).run();
     if (!ws || ws->m_monitor.lock() != m)
         return false;
     StripItem it;
@@ -3143,13 +3079,13 @@ namespace {
 uint32_t modBitForKeycode(int kc) {
     switch (kc) {
         case 42:
-        case 54: return MOD_SHIFT;
+        case 54: return HL_MODIFIER_SHIFT;
         case 29:
-        case 97: return MOD_CTRL;
+        case 97: return HL_MODIFIER_CTRL;
         case 56:
-        case 100: return MOD_ALT;
+        case 100: return HL_MODIFIER_ALT;
         case 125:
-        case 126: return MOD_META;
+        case 126: return HL_MODIFIER_META;
         default: return 0;
     }
 }
@@ -3176,7 +3112,7 @@ void Overview::onKey(const IKeyboard::SKeyEvent& e, bool& cancel) {
     // Held modifiers across all keyboards (not just keys pressed since the overview
     // opened), minus the pressed key's OWN modifier bit — else a bare modifier name
     // ("shift", the key_desktop default) could never match its own press.
-    uint32_t mods = g_pInputManager ? static_cast<uint32_t>(g_pInputManager->getModsFromAllKBs()) : 0;
+    uint32_t mods = g_pInputManager ? g_pInputManager->getModsFromAllKBs() : 0;
     mods &= ~modBitForKeycode(k);
     bool handled = true;
     if (keyMatches(k, mods, "plugin:mission_control:key_close", "escape"))
@@ -3280,13 +3216,13 @@ uint32_t modNameToBit(std::string t) {
     for (auto& c : t)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     if (t == "shift")
-        return MOD_SHIFT;
+        return HL_MODIFIER_SHIFT;
     if (t == "ctrl" || t == "control")
-        return MOD_CTRL;
+        return HL_MODIFIER_CTRL;
     if (t == "alt")
-        return MOD_ALT;
+        return HL_MODIFIER_ALT;
     if (t == "super" || t == "meta" || t == "win")
-        return MOD_META;
+        return HL_MODIFIER_META;
     return 0;
 }
 
@@ -3297,7 +3233,7 @@ uint32_t modNameToBit(std::string t) {
 // through to Hyprland's keybind manager, so the same bind that opened the overview
 // closes it). Only lock states (caps/num) are ignored.
 bool comboMatches(int keycode, uint32_t heldMods, std::string token) {
-    constexpr uint32_t STRICTMODS = MOD_SHIFT | MOD_CTRL | MOD_ALT | MOD_META;
+    constexpr uint32_t STRICTMODS = HL_MODIFIER_SHIFT | HL_MODIFIER_CTRL | HL_MODIFIER_ALT | HL_MODIFIER_META;
 
     uint32_t           need = 0;
     size_t             pos;
@@ -3406,7 +3342,7 @@ void Overview::activateWindow(const PHLWINDOW& w, bool keybind) {
         const auto ws = w->m_workspace;
         // Special (scratchpad) workspaces are not something changeWorkspace should land on —
         // focusing the window is enough; Hyprland keeps the scratchpad up on its own.
-        if (m && ws && !wsSpecial(ws) && ws->m_monitor.lock() == m)
+        if (m && ws && !ws->m_isSpecialWorkspace && ws->m_monitor.lock() == m)
             m_workspace = ws;
     }
     close();
@@ -3428,7 +3364,7 @@ void Overview::syncFocus() const {
         return;
     const auto m = m_monitor.lock();
     const auto w = m_tiles[m_selected].win.lock();
-    if (!m || !w || !w->mapped() || w->isHidden())
+    if (!m || !w || !w->m_isMapped || w->isHidden())
         return;
     if (w->m_workspace != m->m_activeWorkspace) // displaying a non-live workspace — don't desync
         return;
@@ -3627,7 +3563,7 @@ void Overview::addWorkspace(int id_) {
     if (!m)
         return;
     const int  id = resolveNewId(id_);
-    const auto ws = createNumbered(id, m, true);
+    const auto ws = State::workspaceState()->create(id, m->m_id, "", false);
     if (!ws)
         return;
     // A new empty workspace is reaped within a frame or two unless focused. Hold it
@@ -3635,9 +3571,8 @@ void Overview::addWorkspace(int id_) {
     // applies after). Releasing the previously held one is what lets an abandoned empty
     // workspace disappear again under dynamic_workspaces.
     if (const auto old = m_newWs.lock(); old && old != ws)
-        setPersistent(old, false);
-    setPersistent(ws, true);
-    ws->ready();
+        old->setPersistent(false);
+    ws->setPersistent(true);
     m_newWs        = ws;
     m_newCardId    = id;
     m_newCardStart = std::chrono::steady_clock::now();
@@ -3664,7 +3599,7 @@ void Overview::closeWorkspaceWindows(const StripItem& it) {
         return;
     int n = 0;
     for (const auto& w : Desktop::windowState()->windows())
-        if (w && w->mapped() && !w->isHidden() && w->m_workspace == ws) {
+        if (w && w->m_isMapped && !w->isHidden() && w->m_workspace == ws) {
             w->sendClose();
             ++n;
         }
@@ -3728,7 +3663,7 @@ void Overview::deactivate() {
     // Drop the hold on a "+"-created workspace: it stays if active or a window landed
     // there, otherwise reaps like any empty one.
     if (const auto ws = m_newWs.lock())
-        setPersistent(ws, false);
+        ws->setPersistent(false);
     m_newWs.reset();
 
     m_active  = false;

@@ -4,8 +4,7 @@
 
 #include <any>
 #include <hyprland/src/Compositor.hpp>
-#include <hyprland/src/desktop/view/window/Window.hpp>
-#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
+#include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/config/shared/parserUtils/ParserUtils.hpp>
@@ -38,18 +37,22 @@ static auto findBar(PHLWINDOW window) {
 }
 
 static void onNewWindow(PHLWINDOW window) {
-  // Only this plugin's bar counts: Omarchy's titlebars name theirs "Hyprbar"
-  // too, and a live swap loads this plugin while those are still on screen.
-  if (findBar(window) != g_pOmarchyFloatingGlobalState->bars.end())
-    return;
+  if (!window->m_X11DoesntWantBorders) {
+    // Only this plugin's bar counts: Omarchy's titlebars name theirs "Hyprbar"
+    // too, and a live swap loads this plugin while those are still on screen.
+    if (findBar(window) != g_pOmarchyFloatingGlobalState->bars.end())
+      return;
 
-  auto bar = makeShared<COmarchyFloatingHyprBar>(window);
-  g_pOmarchyFloatingGlobalState->bars.emplace_back(bar);
-  bar->m_self = bar;
-  HyprlandAPI::addWindowDecoration(OMARCHY_FLOATING_PHANDLE, window, bar);
-  // Decide now whether the bar shows. Otherwise it waits for the next rule
-  // update, which can be a workspace switch away.
-  bar->updateRules();
+    auto bar = makeUnique<COmarchyFloatingHyprBar>(window);
+    g_pOmarchyFloatingGlobalState->bars.emplace_back(bar);
+    bar->m_self = bar;
+    const WP<COmarchyFloatingHyprBar> added = bar;
+    HyprlandAPI::addWindowDecoration(OMARCHY_FLOATING_PHANDLE, window, std::move(bar));
+    // Decide now whether the bar shows. Otherwise it waits for the next rule
+    // update, which can be a workspace switch away.
+    if (added)
+      added->updateRules();
+  }
 }
 
 static void registerSharedNames();
@@ -75,7 +78,56 @@ static void onUpdateWindowRules(PHLWINDOW window) {
     return;
 
   (*BARIT)->updateRules();
-  window->updateWindowData();
+  window->updateWindowDecos();
+}
+
+Hyprlang::CParseResult onNewOmarchyFloatingButton(const char *K, const char *V) {
+  std::string v = V;
+  Hyprutils::String::CVarList vars(v);
+
+  Hyprlang::CParseResult result;
+
+  // hyprbars-button = bgcolor, size, icon, action, fgcolor
+
+  if (vars[0].empty() || vars[1].empty()) {
+    result.setError("bgcolor and size cannot be empty");
+    return result;
+  }
+
+  float size = 10;
+  try {
+    size = std::stof(vars[1]);
+  } catch (std::exception &e) {
+    result.setError("failed to parse size");
+    return result;
+  }
+
+  bool userfg = false;
+  auto fgcolor = Config::ParserUtils::parseColor("rgb(ffffff)");
+  auto bgcolor = Config::ParserUtils::parseColor(vars[0]);
+
+  if (!bgcolor) {
+    result.setError("invalid bgcolor");
+    return result;
+  }
+
+  if (vars.size() == 5) {
+    userfg = true;
+    fgcolor = Config::ParserUtils::parseColor(vars[4]);
+  }
+
+  if (!fgcolor) {
+    result.setError("invalid fgcolor");
+    return result;
+  }
+
+  g_pOmarchyFloatingGlobalState->buttons.push_back(SOmarchyFloatingHyprButton{vars[3], userfg, *fgcolor, *bgcolor, size, vars[2]});
+
+  for (auto &b : g_pOmarchyFloatingGlobalState->bars) {
+    b->m_bButtonsDirty = true;
+  }
+
+  return result;
 }
 
 int newOmarchyFloatingLuaButton(lua_State *L) {
@@ -241,6 +293,8 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
   };
 
   registerSharedNames();
+  if (Config::mgr()->type() == Config::CONFIG_LEGACY)
+    HyprlandAPI::addConfigKeyword(OMARCHY_FLOATING_PHANDLE, "plugin:hyprbars:hyprbars-button", onNewOmarchyFloatingButton, Hyprlang::SHandlerOptions{});
   static auto P4 = Event::bus()->m_events.config.preReload.listen([&] { onPreConfigReload(); });
   static auto P5 = Event::bus()->m_events.config.reloaded.listen([&] { onConfigReloaded(); });
 
@@ -248,7 +302,7 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
 
   // add deco to existing windows
   for (auto &w : Desktop::windowState()->windows()) {
-    if (w->isHidden() || !validMapped(w))
+    if (w->isHidden() || !w->m_isMapped)
       continue;
 
     onNewWindow(w);
@@ -266,7 +320,7 @@ static void exitOmarchyFloating() {
   for (auto &m : State::monitorState()->monitors())
     m->m_scheduledRecalc = true;
 
-  g_pHyprRenderer->context().m_pass.removeAllOfType("COmarchyFloatingBarPassElement");
+  g_pHyprRenderer->m_renderPass.removeAllOfType("COmarchyFloatingBarPassElement");
 
   Desktop::Rule::windowEffects()->unregisterEffect(g_pOmarchyFloatingGlobalState->barColorRuleIdx);
   Desktop::Rule::windowEffects()->unregisterEffect(g_pOmarchyFloatingGlobalState->titleColorRuleIdx);

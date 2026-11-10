@@ -32,13 +32,13 @@ using RenderWindowHook = decltype(hookType(&SRendererAccess::renderWindow));
 
 static CFunctionHook *g_renderWindowHook = nullptr;
 
-static void hkRenderWindow(void *renderer, Render::CRenderContext &ctx, PHLWINDOW window, PHLMONITOR monitor, const Render::SWindowRenderPresentation &presentation,
-                           const Time::steady_tp &time, bool decorate, Render::eRenderPassMode mode, bool ignorePosition, bool standalone) {
+static void hkRenderWindow(void *renderer, PHLWINDOW window, PHLMONITOR monitor, const Time::steady_tp &time, bool decorate, Render::eRenderPassMode mode,
+                           bool ignorePosition, bool standalone) {
   // Standalone renders (screen sharing a window) are meant to be bare.
   if (!decorate && !standalone && Fullscreen::controller()->getFullscreenModes(window).internal == Fullscreen::FSMODE_MAXIMIZED)
     decorate = true;
 
-  reinterpret_cast<RenderWindowHook>(g_renderWindowHook->m_original)(renderer, ctx, window, monitor, presentation, time, decorate, mode, ignorePosition, standalone);
+  reinterpret_cast<RenderWindowHook>(g_renderWindowHook->m_original)(renderer, window, monitor, time, decorate, mode, ignorePosition, standalone);
 }
 static_assert(std::is_same_v<decltype(&hkRenderWindow), RenderWindowHook>, "IHyprRenderer::renderWindow changed: update hkRenderWindow to match");
 
@@ -53,7 +53,7 @@ void hookMaximizedDecorations() {
   }
 
   if (matches != 1) {
-    Log::logger->log(Log::WARN, "hyprbars", "found {} renderWindow functions, expected 1: maximized windows lose their bar during a swipe", matches);
+    Log::logger->log(Log::WARN, "[hyprbars] found {} renderWindow functions, expected 1: maximized windows lose their bar during a swipe", matches);
     return;
   }
 
@@ -61,7 +61,7 @@ void hookMaximizedDecorations() {
   if (g_renderWindowHook && g_renderWindowHook->hook())
     return;
 
-  Log::logger->log(Log::WARN, "hyprbars", "could not hook renderWindow: maximized windows lose their bar during a swipe");
+  Log::logger->log(Log::WARN, "[hyprbars] could not hook renderWindow: maximized windows lose their bar during a swipe");
   unhookMaximizedDecorations();
 }
 

@@ -8,7 +8,6 @@
 #include <hyprland/src/config/values/types/FloatValue.hpp>
 #include <hyprland/src/config/values/types/StringValue.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
-#include <hyprland/src/ipc/s1/S1.hpp>
 
 extern "C" {
 #include <lauxlib.h>
@@ -266,10 +265,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addDispatcherV2(handle, "mission_control:setworkspace", dispSetWorkspace);
 
     // hyprctl command (exact, not lua-evaluated) — reliable invoke path:  hyprctl mission_control
-    HyprlandAPI::registerHyprCtlCommand(handle, IPC::Socket1::SCommand{
-                                                    .name    = "mission_control",
-                                                    .match   = IPC::Socket1::COMMAND_MATCH_EXACT,
-                                                    .handler = [](const IPC::Socket1::SRequest&) -> IPC::Socket1::SResponse {
+    HyprlandAPI::registerHyprCtlCommand(handle, SHyprCtlCommand{
+                                                    .name  = "Mission Control",
+                                                    .exact = true,
+                                                    .fn    = [](eHyprCtlOutputFormat, std::string) -> std::string {
                                                         if (g_overview)
                                                             g_overview->toggle();
                                                         return "ok\n";
@@ -279,10 +278,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // close-only (no-op if not open): dismiss the overlay before unloading.
     // Unloading mid-render with the overview up tears down the render hooks while
     // an in-flight frame still references them → Hyprland crash.
-    HyprlandAPI::registerHyprCtlCommand(handle, IPC::Socket1::SCommand{
-                                                    .name    = "mission_control_close",
-                                                    .match   = IPC::Socket1::COMMAND_MATCH_EXACT,
-                                                    .handler = [](const IPC::Socket1::SRequest&) -> IPC::Socket1::SResponse {
+    HyprlandAPI::registerHyprCtlCommand(handle, SHyprCtlCommand{
+                                                    .name  = "mission_control_close",
+                                                    .exact = true,
+                                                    .fn    = [](eHyprCtlOutputFormat, std::string) -> std::string {
                                                         if (g_overview)
                                                             g_overview->close();
                                                         return "ok\n";
@@ -294,10 +293,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // animation), this drops all overlay state + the recapture timer synchronously,
     // so the next frame renders with no plugin-owned pass elements and dlclose can't
     // free a callback that is still referenced mid-frame. Makes reload deterministic.
-    HyprlandAPI::registerHyprCtlCommand(handle, IPC::Socket1::SCommand{
-                                                    .name    = "mission_control_unload",
-                                                    .match   = IPC::Socket1::COMMAND_MATCH_EXACT,
-                                                    .handler = [](const IPC::Socket1::SRequest&) -> IPC::Socket1::SResponse {
+    HyprlandAPI::registerHyprCtlCommand(handle, SHyprCtlCommand{
+                                                    .name  = "mission_control_unload",
+                                                    .exact = true,
+                                                    .fn    = [](eHyprCtlOutputFormat, std::string) -> std::string {
                                                         if (g_overview)
                                                             g_overview->hardClose();
                                                         return "ok\n";
@@ -305,10 +304,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                 });
 
     // free-arrange desktop mode toggle:  hyprctl mission_control_desktop
-    HyprlandAPI::registerHyprCtlCommand(handle, IPC::Socket1::SCommand{
-                                                    .name    = "mission_control_desktop",
-                                                    .match   = IPC::Socket1::COMMAND_MATCH_EXACT,
-                                                    .handler = [](const IPC::Socket1::SRequest&) -> IPC::Socket1::SResponse {
+    HyprlandAPI::registerHyprCtlCommand(handle, SHyprCtlCommand{
+                                                    .name  = "mission_control_desktop",
+                                                    .exact = true,
+                                                    .fn    = [](eHyprCtlOutputFormat, std::string) -> std::string {
                                                         if (g_overview)
                                                             g_overview->toggleDesktop();
                                                         return "ok\n";
@@ -316,10 +315,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                 });
 
     // all-workspaces (expo) view toggle:  hyprctl mission_control_all — opens into expo if closed
-    HyprlandAPI::registerHyprCtlCommand(handle, IPC::Socket1::SCommand{
-                                                    .name    = "mission_control_all",
-                                                    .match   = IPC::Socket1::COMMAND_MATCH_EXACT,
-                                                    .handler = [](const IPC::Socket1::SRequest&) -> IPC::Socket1::SResponse {
+    HyprlandAPI::registerHyprCtlCommand(handle, SHyprCtlCommand{
+                                                    .name  = "mission_control_all",
+                                                    .exact = true,
+                                                    .fn    = [](eHyprCtlOutputFormat, std::string) -> std::string {
                                                         if (g_overview)
                                                             g_overview->toggleAllWorkspaces();
                                                         return "ok\n";
@@ -328,19 +327,19 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     // step the displayed workspace:  hyprctl mission_control_next / mission_control_prev
     // (setworkspace takes an argument, so it is dispatcher-only: hyprctl dispatch mission_control:setworkspace 2)
-    HyprlandAPI::registerHyprCtlCommand(handle, IPC::Socket1::SCommand{
-                                                    .name    = "mission_control_next",
-                                                    .match   = IPC::Socket1::COMMAND_MATCH_EXACT,
-                                                    .handler = [](const IPC::Socket1::SRequest&) -> IPC::Socket1::SResponse {
+    HyprlandAPI::registerHyprCtlCommand(handle, SHyprCtlCommand{
+                                                    .name  = "mission_control_next",
+                                                    .exact = true,
+                                                    .fn    = [](eHyprCtlOutputFormat, std::string) -> std::string {
                                                         if (g_overview)
                                                             g_overview->nextWorkspace();
                                                         return "ok\n";
                                                     },
                                                 });
-    HyprlandAPI::registerHyprCtlCommand(handle, IPC::Socket1::SCommand{
-                                                    .name    = "mission_control_prev",
-                                                    .match   = IPC::Socket1::COMMAND_MATCH_EXACT,
-                                                    .handler = [](const IPC::Socket1::SRequest&) -> IPC::Socket1::SResponse {
+    HyprlandAPI::registerHyprCtlCommand(handle, SHyprCtlCommand{
+                                                    .name  = "mission_control_prev",
+                                                    .exact = true,
+                                                    .fn    = [](eHyprCtlOutputFormat, std::string) -> std::string {
                                                         if (g_overview)
                                                             g_overview->prevWorkspace();
                                                         return "ok\n";

@@ -5,10 +5,10 @@
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/desktop/state/LayerState.hpp>
 #include <hyprland/src/desktop/state/ViewHitTester.hpp>
-#include <hyprland/src/desktop/view/window/Window.hpp>
-#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
+#include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/desktop/view/LayerSurface.hpp>
 #include <hyprland/src/helpers/MiscFunctions.hpp>
+#include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/render/Renderer.hpp>
@@ -183,15 +183,19 @@ void COmarchyFloatingHyprBar::onTouchMove(Event::SCallbackInfo &info, ITouch::SM
   if (!m_bDragPending || !m_bTouchEv || !validMapped(m_pWindow) || e.touchID != m_touchId)
     return;
 
+  auto PMONITOR = m_pWindow->m_monitor.lock();
+  PMONITOR = PMONITOR ? PMONITOR : Desktop::focusState()->monitor();
+  const auto COORDS = Vector2D(PMONITOR->m_position.x + e.pos.x * PMONITOR->m_size.x, PMONITOR->m_position.y + e.pos.y * PMONITOR->m_size.y);
+
   if (!m_bDraggingThis) {
     // Initial setup for dragging a window.
-    (void)Config::Actions::floatWindow(Config::Actions::eTogglableAction::TOGGLE_ACTION_ENABLE, m_pWindow.lock());
-    // Pin it so you can change workspaces while dragging a window
-    (void)Config::Actions::pinWindow(Config::Actions::eTogglableAction::TOGGLE_ACTION_ENABLE, m_pWindow.lock());
-
-    g_layoutManager->beginDragTarget(m_pWindow.lock()->layoutTarget(), MBIND_MOVE);
-    m_bDraggingThis = true;
+    g_pKeybindManager->m_dispatchers["setfloating"]("activewindow");
+    g_pKeybindManager->m_dispatchers["resizewindowpixel"]("exact 50% 50%,activewindow");
+    // pin it so you can change workspaces while dragging a window
+    g_pKeybindManager->m_dispatchers["pin"]("activewindow");
   }
+  g_pKeybindManager->m_dispatchers["movewindowpixel"](std::format("exact {} {},activewindow", (int)(COORDS.x - (assignedBoxGlobal().w / 2)), (int)COORDS.y));
+  m_bDraggingThis = true;
 }
 
 void COmarchyFloatingHyprBar::handleDownEvent(Event::SCallbackInfo &info, std::optional<ITouch::SDownEvent> touchEvent) {
@@ -233,9 +237,9 @@ void COmarchyFloatingHyprBar::handleDownEvent(Event::SCallbackInfo &info, std::o
 
     if (m_bDraggingThis) {
       if (m_bTouchEv)
-        (void)Config::Actions::floatWindow(Config::Actions::eTogglableAction::TOGGLE_ACTION_DISABLE);
-      g_layoutManager->endDragTarget();
-      LOG(Log::DEBUG, "[hyprbars] Dragging ended on {:x}", (uintptr_t)PWINDOW.get());
+        g_pKeybindManager->m_dispatchers["settiled"]("activewindow");
+      g_pKeybindManager->m_dispatchers["mouse"]("0movewindow");
+      Log::logger->log(Log::DEBUG, "[hyprbars] Dragging ended on {:x}", (uintptr_t)PWINDOW.get());
     }
 
     m_bDraggingThis = false;
@@ -247,7 +251,7 @@ void COmarchyFloatingHyprBar::handleDownEvent(Event::SCallbackInfo &info, std::o
   if (Desktop::focusState()->window() != PWINDOW)
     Desktop::focusState()->fullWindowFocus(PWINDOW, Desktop::FOCUS_REASON_CLICK);
 
-  if (PWINDOW->isFloating())
+  if (PWINDOW->m_isFloating)
     Desktop::windowState()->raise(PWINDOW);
 
   info.cancelled = true;
@@ -270,12 +274,12 @@ bool COmarchyFloatingHyprBar::startTopEdgeResize(Event::SCallbackInfo &info, PHL
   static const auto RESIZEONBORDER = CConfigValue<Config::INTEGER>("general:resize_on_border");
   static const auto EXTENDGRAB = CConfigValue<Config::INTEGER>("general:extend_border_grab_area");
 
-  if (!*RESIZEONBORDER || !window || !window->isFloating() || Fullscreen::controller()->isFullscreen(window))
+  if (!*RESIZEONBORDER || !window || !window->m_isFloating || Fullscreen::controller()->isFullscreen(window))
     return false;
 
   // The band runs from the top of the bar out over the border and the grab
   // area beyond it, across the bar's width and the grab area at its corners.
-  const double GRAB = window->presentation().borderSize() + *EXTENDGRAB;
+  const double GRAB = window->getRealBorderSize() + *EXTENDGRAB;
   const double WIDTH = assignedBoxGlobal().w;
   if (coords.y >= 0 || coords.y < -GRAB || coords.x < -GRAB || coords.x >= WIDTH + GRAB)
     return false;
@@ -284,7 +288,7 @@ bool COmarchyFloatingHyprBar::startTopEdgeResize(Event::SCallbackInfo &info, PHL
     Desktop::focusState()->fullWindowFocus(window, Desktop::FOCUS_REASON_CLICK);
   Desktop::windowState()->raise(window);
 
-  g_layoutManager->beginDragTarget(window->layoutTarget(), MBIND_RESIZE);
+  CKeybindManager::changeMouseBindMode(MBIND_RESIZE);
 
   // The press never reaches Hyprland, so neither does the release: the up
   // handler ends the resize the way it ends a titlebar drag.
@@ -305,12 +309,12 @@ void COmarchyFloatingHyprBar::handleUpEvent(Event::SCallbackInfo &info) {
   m_bCancelledDown = false;
 
   if (m_bDraggingThis) {
-    g_layoutManager->endDragTarget();
+    g_pKeybindManager->changeMouseBindMode(MBIND_INVALID);
     m_bDraggingThis = false;
     if (m_bTouchEv)
       (void)Config::Actions::floatWindow(Config::Actions::eTogglableAction::TOGGLE_ACTION_DISABLE);
 
-    LOG(Log::DEBUG, "[hyprbars] Dragging ended on {:x}", (uintptr_t)m_pWindow.lock().get());
+    Log::logger->log(Log::DEBUG, "[hyprbars] Dragging ended on {:x}", (uintptr_t)m_pWindow.lock().get());
   }
 
   m_bDragPending = false;
@@ -336,9 +340,9 @@ void COmarchyFloatingHyprBar::handleMovement() {
     g_layoutManager->setTargetGeom(box, window->layoutTarget());
     window->layoutTarget()->warpPositionSize();
   }
-  g_layoutManager->beginDragTarget(window->layoutTarget(), MBIND_MOVE);
+  g_pKeybindManager->changeMouseBindMode(MBIND_MOVE);
   m_bDraggingThis = true;
-  LOG(Log::DEBUG, "[hyprbars] Dragging initiated on {:x}", (uintptr_t)m_pWindow.lock().get());
+  Log::logger->log(Log::DEBUG, "[hyprbars] Dragging initiated on {:x}", (uintptr_t)m_pWindow.lock().get());
   return;
 }
 
@@ -353,7 +357,7 @@ bool COmarchyFloatingHyprBar::doButtonPress(Config::INTEGER barPadding, Config::
 
     if (VECINRECT(COORDS, currentPos.x, currentPos.y, currentPos.x + b.size + barButtonPadding, currentPos.y + b.size)) {
       // hit on close
-      Config::Supplementary::executor()->spawn(windowCommand(b.cmd, m_pWindow.lock()));
+      g_pKeybindManager->m_dispatchers["exec"](windowCommand(b.cmd, m_pWindow.lock()));
       return true;
     }
 
@@ -414,7 +418,7 @@ bool COmarchyFloatingHyprBar::drawsOwnGlyph(const SOmarchyFloatingHyprButton &bu
   return g_pOmarchyFloatingGlobalState->config.buttonRounding->value() < 0 && lightGlyphFor(button.icon) != eLightGlyph::NONE;
 }
 
-void COmarchyFloatingHyprBar::renderLightButton(Render::CRenderContext &ctx, SOmarchyFloatingHyprButton &button, const CBox &box, const CHyprColor &face, float a) {
+void COmarchyFloatingHyprBar::renderLightButton(SOmarchyFloatingHyprButton &button, const CBox &box, const CHyprColor &face, float a) {
   const auto ICONONHOVER = g_pOmarchyFloatingGlobalState->config.iconOnHover->value();
   const auto glyph = lightGlyphFor(button.icon);
   // An unfocused window shows plain lights in the inactive colour, as macOS
@@ -430,10 +434,10 @@ void COmarchyFloatingHyprBar::renderLightButton(Render::CRenderContext &ctx, SOm
     tex = renderLight(px, face, glyph, withGlyph, glyphColor);
   }
 
-  g_pHyprOpenGL->renderTexture(ctx, tex, box, {.a = a});
+  g_pHyprOpenGL->renderTexture(tex, box, {.a = a});
 }
 
-void COmarchyFloatingHyprBar::renderBarButtons(Render::CRenderContext &ctx, CBox *barBox, const float scale, const float a) {
+void COmarchyFloatingHyprBar::renderBarButtons(CBox *barBox, const float scale, const float a) {
   const auto BARBUTTONPADDING = g_pOmarchyFloatingGlobalState->config.barButtonPadding->value();
   const auto BARPADDING = g_pOmarchyFloatingGlobalState->config.barPadding->value();
   const auto ALIGNBUTTONS = g_pOmarchyFloatingGlobalState->config.barButtonsAlignment->value();
@@ -467,7 +471,7 @@ void COmarchyFloatingHyprBar::renderBarButtons(Render::CRenderContext &ctx, CBox
     // Circular buttons are drawn as traffic lights: a texture rendered at the
     // light's exact pixel size, so its edge and glyph stay smooth at any scale.
     if (BUTTONROUNDING < 0) {
-      renderLightButton(ctx, button, buttonBox, color, a);
+      renderLightButton(button, buttonBox, color, a);
       offset += scaledButtonsPad + scaledButtonSize;
       continue;
     }
@@ -481,24 +485,24 @@ void COmarchyFloatingHyprBar::renderBarButtons(Render::CRenderContext &ctx, CBox
     if (borderSize > 0) {
       auto borderColor = configColor(BUTTONBORDERCOLOR);
       borderColor.a *= a;
-      g_pHyprOpenGL->renderRect(ctx, buttonBox, borderColor, {.round = rounding});
+      g_pHyprOpenGL->renderRect(buttonBox, borderColor, {.round = rounding});
       auto face = buttonBox.copy().expand(-borderSize);
-      g_pHyprOpenGL->renderRect(ctx, face, color, {.round = std::max(0, rounding - borderSize)});
+      g_pHyprOpenGL->renderRect(face, color, {.round = std::max(0, rounding - borderSize)});
     } else
-      g_pHyprOpenGL->renderRect(ctx, buttonBox, color, {.round = rounding});
+      g_pHyprOpenGL->renderRect(buttonBox, color, {.round = rounding});
 
     // A hovered button lifts its face in its own icon color, which follows any theme.
     if (m_iButtonHoverState & (1u << i)) {
       auto hover = button.userfg ? button.fgcol : (button.bgcol.r + button.bgcol.g + button.bgcol.b < 1) ? CHyprColor(0xFFFFFFFF) : CHyprColor(0xFF000000);
       hover.a = 0.18 * a;
-      g_pHyprOpenGL->renderRect(ctx, buttonBox, hover, {.round = rounding});
+      g_pHyprOpenGL->renderRect(buttonBox, hover, {.round = rounding});
     }
 
     offset += scaledButtonsPad + scaledButtonSize;
   }
 }
 
-void COmarchyFloatingHyprBar::renderBarButtonsText(Render::CRenderContext &ctx, CBox *barBox, const float scale, const float a) {
+void COmarchyFloatingHyprBar::renderBarButtonsText(CBox *barBox, const float scale, const float a) {
   const auto HEIGHT = g_pOmarchyFloatingGlobalState->config.barHeight->value();
   const auto BARBUTTONPADDING = g_pOmarchyFloatingGlobalState->config.barButtonPadding->value();
   const auto BARPADDING = g_pOmarchyFloatingGlobalState->config.barPadding->value();
@@ -551,7 +555,7 @@ void COmarchyFloatingHyprBar::renderBarButtonsText(Render::CRenderContext &ctx, 
     CBox pos = {iconX, iconY, iconTex->m_size.x, iconTex->m_size.y};
 
     if (!ICONONHOVER || (ICONONHOVER && m_iButtonHoverState > 0))
-      g_pHyprOpenGL->renderTexture(ctx, iconTex, pos, {.a = a});
+      g_pHyprOpenGL->renderTexture(iconTex, pos, {.a = a});
     offset += scaledButtonsPad + scaledButtonSize;
 
     bool currentBit = (m_iButtonHoverState & (1 << i)) != 0;
@@ -563,7 +567,7 @@ void COmarchyFloatingHyprBar::renderBarButtonsText(Render::CRenderContext &ctx, 
   }
 }
 
-void COmarchyFloatingHyprBar::draw(Render::CRenderContext &ctx, PHLMONITOR pMonitor, const float &a, const Render::SWindowRenderPresentation &presentation) {
+void COmarchyFloatingHyprBar::draw(PHLMONITOR pMonitor, const float &a) {
   const auto ENABLED = g_pOmarchyFloatingGlobalState->config.enabled->value();
 
   if (m_bLastEnabledState != ENABLED) {
@@ -580,10 +584,10 @@ void COmarchyFloatingHyprBar::draw(Render::CRenderContext &ctx, PHLMONITOR pMoni
     return;
 
   auto data = COmarchyFloatingBarPassElement::SBarData{this, a};
-  Render::IHyprRenderer::addPassElement(ctx, makeUnique<COmarchyFloatingBarPassElement>(data));
+  g_pHyprRenderer->m_renderPass.add(makeUnique<COmarchyFloatingBarPassElement>(data));
 }
 
-void COmarchyFloatingHyprBar::renderPass(Render::CRenderContext &ctx, PHLMONITOR pMonitor, const float &a) {
+void COmarchyFloatingHyprBar::renderPass(PHLMONITOR pMonitor, const float &a) {
   const auto PWINDOW = m_pWindow.lock();
 
   static auto PENABLEBLURGLOBAL = CConfigValue<Config::BOOL>("decoration:blur:enabled");
@@ -621,9 +625,9 @@ void COmarchyFloatingHyprBar::renderPass(Render::CRenderContext &ctx, PHLMONITOR
   }
 
   const auto PWORKSPACE = PWINDOW->m_workspace;
-  const auto WORKSPACEOFFSET = PWORKSPACE && !(PWINDOW->m_state & Desktop::View::WINDOW_STATE_PINNED) ? PWORKSPACE->m_renderOffset->value() : Vector2D();
+  const auto WORKSPACEOFFSET = PWORKSPACE && !PWINDOW->m_pinned ? PWORKSPACE->m_renderOffset->value() : Vector2D();
 
-  const auto ROUNDING = PWINDOW->presentation().rounding() + (PRECEDENCE ? 0 : PWINDOW->presentation().borderSize());
+  const auto ROUNDING = PWINDOW->rounding() + (PRECEDENCE ? 0 : PWINDOW->getRealBorderSize());
 
   const auto scaledRounding = ROUNDING > 0 ? ROUNDING * pMonitor->m_scale - 2 /* idk why but otherwise it looks bad due to the gaps */ : 0;
 
@@ -636,17 +640,17 @@ void COmarchyFloatingHyprBar::renderPass(Render::CRenderContext &ctx, PHLMONITOR
   CBox titleBarBox = {DECOBOX.x - pMonitor->m_position.x, DECOBOX.y - pMonitor->m_position.y, DECOBOX.w,
                       DECOBOX.h + ROUNDING * 3 /* to fill the bottom cuz we can't disable rounding there */};
 
-  titleBarBox.translate(PWINDOW->presentation().floatingOffset()).scale(pMonitor->m_scale).round();
+  titleBarBox.translate(PWINDOW->m_floatingOffset).scale(pMonitor->m_scale).round();
 
   if (titleBarBox.w < 1 || titleBarBox.h < 1)
     return;
 
-  g_pHyprOpenGL->scissor(ctx, titleBarBox);
+  g_pHyprOpenGL->scissor(titleBarBox);
 
   if (ROUNDING) {
     // the +1 is a shit garbage temp fix until renderRect supports an alpha matte
-    CBox windowBox = {PWINDOW->position(Desktop::View::IGeometric::GEOMETRIC_CURRENT).x + PWINDOW->presentation().floatingOffset().x - pMonitor->m_position.x + 1,
-                      PWINDOW->position(Desktop::View::IGeometric::GEOMETRIC_CURRENT).y + PWINDOW->presentation().floatingOffset().y - pMonitor->m_position.y + 1,
+    CBox windowBox = {PWINDOW->position(Desktop::View::IGeometric::GEOMETRIC_CURRENT).x + PWINDOW->m_floatingOffset.x - pMonitor->m_position.x + 1,
+                      PWINDOW->position(Desktop::View::IGeometric::GEOMETRIC_CURRENT).y + PWINDOW->m_floatingOffset.y - pMonitor->m_position.y + 1,
                       PWINDOW->size(Desktop::View::IGeometric::GEOMETRIC_CURRENT).x - 2, PWINDOW->size(Desktop::View::IGeometric::GEOMETRIC_CURRENT).y - 2};
 
     if (windowBox.w < 1 || windowBox.h < 1)
@@ -663,21 +667,21 @@ void COmarchyFloatingHyprBar::renderPass(Render::CRenderContext &ctx, PHLMONITOR
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 
     windowBox.translate(WORKSPACEOFFSET).scale(pMonitor->m_scale).round();
-    g_pHyprOpenGL->renderRect(ctx, windowBox, CHyprColor(0, 0, 0, 0), {.round = scaledRounding, .roundingPower = m_pWindow->presentation().roundingPower()});
+    g_pHyprOpenGL->renderRect(windowBox, CHyprColor(0, 0, 0, 0), {.round = scaledRounding, .roundingPower = m_pWindow->roundingPower()});
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
     glStencilFunc(GL_NOTEQUAL, 1, -1);
     glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
   }
 
-  g_pHyprOpenGL->renderRect(ctx, titleBarBox, color, {.round = static_cast<int>(scaledRounding), .roundingPower = PWINDOW->presentation().roundingPower()});
+  g_pHyprOpenGL->renderRect(titleBarBox, color, {.round = static_cast<int>(scaledRounding), .roundingPower = PWINDOW->roundingPower()});
 
   // render title
   // The app's name is steadier than a window title, which for a web app is often
   // just its domain or the page it is on. Windows no launcher claims keep theirs.
-  std::string title = omarchyAppName(PWINDOW->metadata().appID());
+  std::string title = omarchyAppName(PWINDOW->m_class);
   if (title.empty())
-    title = PWINDOW->metadata().title();
+    title = PWINDOW->m_title;
   // The title is rendered at the monitor's scale. A window dragged between
   // monitors of different scales is drawn on each, so one texture is kept per
   // scale; otherwise the title shows at the other monitor's size.
@@ -713,7 +717,7 @@ void COmarchyFloatingHyprBar::renderPass(Render::CRenderContext &ctx, PHLMONITOR
       buttonSizes += b.size + BARBUTTONPADDING;
     }
 
-    const auto scaledBorderSize = PWINDOW->presentation().borderSize() * pMonitor->m_scale;
+    const auto scaledBorderSize = PWINDOW->getRealBorderSize() * pMonitor->m_scale;
     const auto scaledButtonsSize = buttonSizes * pMonitor->m_scale;
     const auto scaledBarPadding = BARPADDING * pMonitor->m_scale;
     const auto xOffset = ALIGN == "left" ? std::round(scaledBarPadding + (BUTTONSRIGHT ? 0 : scaledButtonsSize))
@@ -723,15 +727,15 @@ void COmarchyFloatingHyprBar::renderPass(Render::CRenderContext &ctx, PHLMONITOR
 
     const auto INACTIVETITLE = g_pOmarchyFloatingGlobalState->config.inactiveTitleOpacity->value();
     const float titleAlpha = m_bWindowHasFocus ? 1.F : std::clamp(static_cast<float>(INACTIVETITLE) / 100.F, 0.F, 1.F);
-    g_pHyprOpenGL->renderTexture(ctx, m_pTextTex, titleBox, {.a = a * titleAlpha});
+    g_pHyprOpenGL->renderTexture(m_pTextTex, titleBox, {.a = a * titleAlpha});
   }
 
-  renderBarButtons(ctx, &textBox, pMonitor->m_scale, a);
+  renderBarButtons(&textBox, pMonitor->m_scale, a);
   m_bButtonsDirty = false;
 
-  g_pHyprOpenGL->scissor(ctx, nullptr);
+  g_pHyprOpenGL->scissor(nullptr);
 
-  renderBarButtonsText(ctx, &textBox, pMonitor->m_scale, a);
+  renderBarButtonsText(&textBox, pMonitor->m_scale, a);
 
   m_bWindowSizeChanged = false;
   m_bTitleColorChanged = false;
@@ -792,7 +796,7 @@ CBox COmarchyFloatingHyprBar::assignedBoxGlobal() {
   box.translate(g_pDecorationPositioner->getEdgeDefinedPoint(DECORATION_EDGE_TOP, m_pWindow.lock()));
 
   const auto PWORKSPACE = m_pWindow->m_workspace;
-  const auto WORKSPACEOFFSET = PWORKSPACE && !(m_pWindow->m_state & Desktop::View::WINDOW_STATE_PINNED) ? PWORKSPACE->m_renderOffset->value() : Vector2D();
+  const auto WORKSPACEOFFSET = PWORKSPACE && !m_pWindow->m_pinned ? PWORKSPACE->m_renderOffset->value() : Vector2D();
 
   return box.translate(WORKSPACEOFFSET);
 }
@@ -814,7 +818,7 @@ void COmarchyFloatingHyprBar::updateRules() {
     m_hidden = truthy(PWINDOW->m_ruleApplicator->m_otherProps.props.at(g_pOmarchyFloatingGlobalState->nobarRuleIdx)->effect);
   const auto workspaceTag = g_pOmarchyFloatingGlobalState->config.workspaceTag->value();
   if (!workspaceTag.empty())
-    m_hidden = m_hidden || !PWINDOW->isFloating() || !PWINDOW->m_ruleApplicator->m_tagKeeper.isTagged(workspaceTag);
+    m_hidden = m_hidden || !PWINDOW->m_isFloating || !PWINDOW->m_ruleApplicator->m_tagKeeper.isTagged(workspaceTag);
   if (PWINDOW->m_ruleApplicator->m_otherProps.props.contains(g_pOmarchyFloatingGlobalState->barColorRuleIdx))
     m_bForcedBarColor = CHyprColor(
         Config::ParserUtils::parseColor(PWINDOW->m_ruleApplicator->m_otherProps.props.at(g_pOmarchyFloatingGlobalState->barColorRuleIdx)->effect).value_or(0));
