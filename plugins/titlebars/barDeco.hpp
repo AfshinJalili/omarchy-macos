@@ -51,6 +51,8 @@ public:
   PHLWINDOW getOwner();
 
   void updateRules();
+  // Whether the bar is on screen: enabled, and not hidden by a rule or the workspace tag.
+  bool shown() const;
   void onConfigReloaded();
 
   WP<COmarchyFloatingHyprBar> m_self;

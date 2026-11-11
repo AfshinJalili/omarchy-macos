@@ -14,6 +14,7 @@ macOS-style title bars for [Hyprland](https://hyprland.org): traffic lights on t
 - **macOS glyphs.** Close (×), minimize (−), and full screen (two triangles) are drawn as vector shapes, not text. Hovering any light shows all three, as on macOS.
 - **Unfocused windows.** Lights turn grey and the title dims.
 - **Monitors with different scales.** The title keeps its size when a window moves between monitors with different scales, including mid-drag across both.
+- **Titlebars stay below the top bar.** A drag stops a window's bar at the top bar, as macOS stops it at the menu bar, and a window that opens or comes back from maximized too high is moved down, so its bar can always be grabbed (`keepOnScreen.cpp`).
 - **Bars stay during a swipe.** Hyprland drops the decorations of a maximized window while it slides past a workspace with a fullscreen window. The plugin turns them back on (`maximizedDecorations.cpp`).
 - **Content shrinks with its window.** A floating window coming back from maximized is told its new size once the animation ends. Told at the start, a browser or Electron app redraws small at once, and its content snaps ahead of the window's box, blur and shadow (`deferShrink.cpp`).
 - **Dragging out of maximized animates.** A maximized window pulled down by its titlebar shrinks to its old size under the pointer instead of jumping to it (`dragRestore.cpp`).

@@ -30,6 +30,7 @@
 #include "dragRestore.hpp"
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include "appName.hpp"
+#include "keepOnScreen.hpp"
 
 #include <algorithm>
 #include <climits>
@@ -801,6 +802,8 @@ CBox COmarchyFloatingHyprBar::assignedBoxGlobal() {
 
 PHLWINDOW COmarchyFloatingHyprBar::getOwner() { return m_pWindow.lock(); }
 
+bool COmarchyFloatingHyprBar::shown() const { return !m_hidden && g_pOmarchyFloatingGlobalState->config.enabled->value(); }
+
 void COmarchyFloatingHyprBar::updateRules() {
   const auto PWINDOW = m_pWindow.lock();
   if (!PWINDOW)
@@ -829,6 +832,9 @@ void COmarchyFloatingHyprBar::updateRules() {
     g_pDecorationPositioner->repositionDeco(this);
     if (const auto monitor = PWINDOW->m_monitor.lock())
       monitor->m_scheduledRecalc = true;
+    // A bar that appears on a window already high up would start under the top bar.
+    if (!m_hidden)
+      keepBarOnScreenLater(PWINDOW);
   }
   if (prevForcedTitleColor != m_bForcedTitleColor)
     m_bTitleColorChanged = true;
