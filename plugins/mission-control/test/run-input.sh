@@ -14,10 +14,22 @@ NESTED_LOG="$ROOT/test/input.log" nested_start "$ROOT/test/input.lua" \
   MISSION_CONTROL_PLUGIN="${1:-$ROOT/build/omarchy-macos-mission-control.so}"
 socket="$NESTED_SOCKET"
 run() { hyprctl eval "$1" >/dev/null; sleep "${2:-1}"; }
-for ws in 1 2 3; do
-  run "hl.dispatch(hl.dsp.focus({ workspace = \"$ws\" }))" 0.5
-  run 'hl.dispatch(hl.dsp.exec_cmd("foot -e sleep 600"))' 1.5
-done
+# A window of one colour, to find on screen.
+open_coloured() { # open_coloured <app id> <rrggbb> <workspace>
+  run "hl.dispatch(hl.dsp.focus({ workspace = \"$3\" }))" 0.5
+  run "hl.dispatch(hl.dsp.exec_cmd(\"foot --app-id $1 -o colors-dark.background=$2 -o colors-light.background=$2 -o colors-dark.alpha=1 -o colors-light.alpha=1 sleep 600\"))" 1.5
+}
+find_colour() { # find_colour <rrggbb> <row %>...: x y of a pixel of that colour, a little inside it
+  local c="$1" y; shift
+  for y in "$@"; do
+    y=$((H * y / 100))
+    WAYLAND_DISPLAY="$socket" grim -s 1 -g "0,$y ${W}x1" -t ppm - | tail -c $((W * 3)) | od -An -v -tx1 |
+      tr -s ' \n' '\n' | grep -v '^$' | paste -d '' - - - | awk -v c="$c" -v y="$y" '$1 == c { print NR + 5, y; f = 1; exit } END { exit !f }' && return 0
+  done
+  return 1
+}
+# One window per workspace, each its own colour, so its card can be found on screen.
+open_coloured one ffff00 1; open_coloured two 00ffff 2; open_coloured three ff00ff 3
 read -r W H < <(hyprctl monitors -j | jq -r '.[0] | "\(.width) \(.height)"')
 pointer() { WAYLAND_DISPLAY="$socket" "$POINTER" "$W" "$H"; }
 active() { hyprctl activeworkspace -j | jq -r .id; }
@@ -42,31 +54,20 @@ open_on 2; stroke 0 5 6; stroke 0 -5 20;         check "a short stroke does noth
 open_on 1; stroke 1 5 20;                        check "a horizontal stroke steps once" 2
 open_on 3; stroke 0 5 20;                        check "a stroke past the last workspace stays" 3
 open_on 1; printf 'wheel 0 1\nwait 100\nwheel 0 1\n' | pointer; sleep 0.6; check "a mouse wheel steps per notch" 3
-click() { # click <x> <y> as fractions of the screen in hundredths: card centres in the default top strip
-  printf 'move %d %d\nwait 100\ndown\nwait 60\nup\n' $((W * $1 / 100)) $((H * $2 / 100)) | pointer
+strip_rows="4 6 8 10 12 14 16 18 20"   # rows, in % of the screen, that cross the strip's cards
+click_card() { # click_card <rrggbb>: click the card showing a window of that colour
+  local at
+  at=$(find_colour "$1" $strip_rows) || { echo "FAIL no card of colour $1"; fail=1; run 'hl.plugin.mission_control.close()'; return 0; }
+  printf 'move %d %d\nwait 100\ndown\nwait 60\nup\n' $at | pointer
   sleep 1.2
 }
 closed_on() { # closed_on <name> <expected>: the click alone must have closed Mission Control
   local got; got=$(active)
   if [[ $got == "$2" ]]; then echo "ok   $1: workspace $got"; else echo "FAIL $1: workspace $got, expected $2"; fail=1; fi
 }
-open_on 1; click 59 18;                          closed_on "clicking workspace 3's card leaves for it" 3
-open_on 3; click 41 18;                          closed_on "clicking workspace 2's card leaves for it" 2
+open_on 1; click_card ff00ff;                    closed_on "clicking workspace 3's card leaves for it" 3
+open_on 3; click_card 00ffff;                    closed_on "clicking workspace 2's card leaves for it" 2
 
-# A window of one colour, to find on screen.
-open_coloured() { # open_coloured <app id> <rrggbb> <workspace>
-  run "hl.dispatch(hl.dsp.focus({ workspace = \"$3\" }))" 0.5
-  run "hl.dispatch(hl.dsp.exec_cmd(\"foot --app-id $1 -o colors-dark.background=$2 -o colors-light.background=$2 -o colors-dark.alpha=1 -o colors-light.alpha=1 sleep 600\"))" 1.5
-}
-find_colour() { # find_colour <rrggbb> <row %>...: x y of a pixel of that colour, a little inside it
-  local c="$1" y; shift
-  for y in "$@"; do
-    y=$((H * y / 100))
-    WAYLAND_DISPLAY="$socket" grim -s 1 -g "0,$y ${W}x1" -t ppm - | tail -c $((W * 3)) | od -An -v -tx1 |
-      tr -s ' \n' '\n' | grep -v '^$' | paste -d '' - - - | awk -v c="$c" -v y="$y" '$1 == c { print NR + 5, y; f = 1; exit } END { exit !f }' && return 0
-  done
-  return 1
-}
 drag() { # drag <x> <y> <to x> <to y>: press, move there in steps, release
   printf 'move %d %d\nwait 80\nmove %d %d\nwait 150\ndown\nwait 80\nmove %d %d\nwait 80\nmove %d %d\nwait 80\nmove %d %d\nwait 80\nup\n' \
     $(($1 + 3)) $(($2 + 3)) "$1" "$2" $((($1 * 2 + $3) / 3)) $((($2 * 2 + $4) / 3)) $((($1 + $3 * 2) / 3)) $((($2 + $4 * 2) / 3)) "$3" "$4" | pointer
@@ -81,7 +82,7 @@ open_coloured dropped ff0000 4; open_coloured stays 0000ff 4; open_coloured ther
 run 'hl.dispatch(hl.dsp.focus({ workspace = "4" }))'
 run 'hl.dispatch(hl.dsp.focus({ window = "class:^dropped$" }))'   # as the window one goes to drag is
 run 'hl.plugin.mission_control.open()'
-if tile=$(find_colour ff0000 40 50 60 70) && card=$(find_colour 00ff00 10 12 14 16); then
+if tile=$(find_colour ff0000 40 50 60 70) && card=$(find_colour 00ff00 $strip_rows); then
   drag $tile $card   # hovering the tile on the way focuses its window, as a hand does
   run 'hl.plugin.mission_control.close()'
   expect "the dragged window lands on the card's workspace" "$(workspace_of dropped)" 5
