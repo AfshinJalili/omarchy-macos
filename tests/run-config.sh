@@ -32,6 +32,9 @@ check "Ctrl + Up opens Mission Control" 'hyprctl binds -j | jq -e ".[] | select(
 hyprctl eval 'hl.dispatch(hl.dsp.exec_cmd("foot -e sleep 600"))' >/dev/null; sleep 2
 check "a window on a floating workspace gets a titlebar" '[[ $(hyprctl decorations class:foot | grep -c Hyprbar) -ge 1 ]]'
 check "the look applies (rounding 12)" '[[ $(hyprctl getoption decoration:rounding | head -1) == "int: 12" ]]'
+hyprctl eval 'hl.dispatch(hl.dsp.window.fullscreen({ mode = "maximized", action = "set" }))' >/dev/null; sleep 1
+# With no border the window starts at the monitor's left edge.
+check "a maximized window has no border, so it meets the top bar" '[[ $(hyprctl clients -j | jq ".[] | select(.class == \"foot\") | .at[0]") == 0 ]]'
 nested_stop
 
 session 'return { mission_control = false, look = false }'

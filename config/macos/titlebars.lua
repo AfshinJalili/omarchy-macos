@@ -92,6 +92,13 @@ local function restyle(bars)
   bars.__macos = true
 end
 
+-- A zoomed (maximized) window meets the top bar. Its border would leave a
+-- translucent line between the top bar and the titlebar, showing the wallpaper.
+hl.window_rule({
+  match = { fullscreen_state_internal = 1 },
+  border_size = 0,
+})
+
 local stock_load = hl.plugin.load
 hl.plugin.load = function(path, ...)
   local result
