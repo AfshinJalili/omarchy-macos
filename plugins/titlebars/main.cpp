@@ -285,13 +285,16 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
   g_pOmarchyFloatingGlobalState->config.workspaceTag =
       makeShared<Config::Values::CStringValue>("plugin:hyprbars:workspace_tag", "Restrict bars to windows with this tag", "");
 
+  g_pOmarchyFloatingGlobalState->config.liveResize = makeShared<Config::Values::CBoolValue>(
+      "plugin:hyprbars:live_resize", "Resize a floating window's content step by step while its size animates", false);
+
   const auto &config = g_pOmarchyFloatingGlobalState->config;
   g_pOmarchyFloatingGlobalState->unregisteredValues = {
       config.barColor, config.textColor, config.inactiveBarColor, config.inactiveButtonColor, config.barHeight, config.barTextSize,
       config.barTextWeight, config.barTitleEnabled, config.barBlur, config.barTextFont, config.barTextAlign, config.barPartOfWindow,
       config.barPrecedenceOverBorder, config.barButtonsAlignment, config.barPadding, config.barButtonPadding, config.buttonRounding,
       config.buttonBorderSize, config.buttonBorderColor, config.enabled, config.workspaceTag, config.inactiveTitleOpacity, config.iconOnHover,
-      config.onDoubleClick
+      config.onDoubleClick, config.liveResize
   };
 
   registerSharedNames();
