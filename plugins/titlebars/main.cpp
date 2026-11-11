@@ -21,6 +21,8 @@
 
 #include "barDeco.hpp"
 #include "globals.hpp"
+#include "deferShrink.hpp"
+#include "dragRestore.hpp"
 #include "maximizedDecorations.hpp"
 
 extern "C" {
@@ -299,6 +301,8 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
   static auto P5 = Event::bus()->m_events.config.reloaded.listen([&] { onConfigReloaded(); });
 
   hookMaximizedDecorations();
+  hookDeferShrink();
+  hookDragRestore();
 
   // add deco to existing windows
   for (auto &w : Desktop::windowState()->windows()) {
@@ -316,6 +320,8 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
 
 static void exitOmarchyFloating() {
   unhookMaximizedDecorations();
+  unhookDeferShrink();
+  unhookDragRestore();
 
   for (auto &m : State::monitorState()->monitors())
     m->m_scheduledRecalc = true;
