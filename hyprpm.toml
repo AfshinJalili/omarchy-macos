@@ -5,9 +5,9 @@ authors = ["Afshin Jalili"]
 # not listed build main. scripts/build-plugins.sh reads these too.
 commit_pins = [
     ["11cbc6c577b84ffb1edf4df3fc5b6128c3ae6947", "6a1237aea09c46d2f4608784ce59d01de760b7cd"], # 0.57.2
-    ["36b2e0cfe0c6094dbc47bd42a437431315bb3087", "9304a68f8e3528b1fb2106dbae585c1889c5cc98"], # 0.56.0
-    ["5c9377c15f85c50648f35ca5a213754f95b93ca0", "9304a68f8e3528b1fb2106dbae585c1889c5cc98"], # 0.56.1
-    ["efb50993780079460b0cbed1363e2166a2de1d9f", "9304a68f8e3528b1fb2106dbae585c1889c5cc98"], # 0.56.2
+    ["36b2e0cfe0c6094dbc47bd42a437431315bb3087", "f23c928c33dd42f815abdb30c6831b571093cee9"], # 0.56.0
+    ["5c9377c15f85c50648f35ca5a213754f95b93ca0", "f23c928c33dd42f815abdb30c6831b571093cee9"], # 0.56.1
+    ["efb50993780079460b0cbed1363e2166a2de1d9f", "f23c928c33dd42f815abdb30c6831b571093cee9"], # 0.56.2
 ]
 
 [omarchy-macos-titlebars]
