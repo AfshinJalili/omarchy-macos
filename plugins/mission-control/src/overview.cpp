@@ -3435,8 +3435,13 @@ void Overview::activateWindow(const PHLWINDOW& w, bool keybind) {
             m_workspace = ws;
     }
     close();
-    if (w)
+    if (w) {
         Desktop::focusState()->fullWindowFocus(w, keybind ? Desktop::FOCUS_REASON_KEYBIND : Desktop::FOCUS_REASON_CLICK);
+        // Focus alone does not raise. A floating window left below a full-screen or zoomed
+        // floating one is drawn over it but its clicks go to that window (see dropOnWorkspace).
+        if (w->m_isFloating)
+            Desktop::windowState()->raise(w);
+    }
 }
 
 // Point Hyprland's REAL focus at the selected tile while the overview is up. passthrough
