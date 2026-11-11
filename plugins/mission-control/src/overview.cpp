@@ -2905,6 +2905,11 @@ void Overview::dropOnWorkspace(const PHLWINDOW& w, const StripItem& it, const LR
     }
 
     Desktop::globalWindowController()->moveWindowToWorkspace(w, target);
+    // Bring the dropped window to the front of its new workspace. Hyprland draws floating
+    // windows over a full-screen one whatever their stacking order, but the pointer picks
+    // floating windows by that order, and on a floating workspace the full-screen window
+    // floats too: left below it, the dropped window shows on top yet its clicks go through.
+    Desktop::windowState()->raise(w);
     target->ready(); // 0.57: emits workspace.created once set up; no-op on an existing workspace
 
     // switch_on_drop: follow the window to its new workspace instead of staying put.
