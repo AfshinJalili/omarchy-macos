@@ -26,7 +26,7 @@ While it is open, Mission Control takes the trackpad's swipes from the desktop:
 - **Two-finger scroll** over the windows steps one desktop per stroke, and also stops at the last desktop. A mouse wheel steps one desktop per notch.
 - **Clicking a desktop** in the strip leaves Mission Control for it, as on macOS.
 
-`test/run-input.sh` checks the scrolling and clicking in a nested Hyprland with a virtual pointer. Swipes can't be faked without root, so they are tested by hand.
+`test/run-input.sh` checks the scrolling, clicking and dragging in a nested Hyprland with a virtual pointer. Swipes can't be faked without root, so they are tested by hand.
 
 ## Usage
 

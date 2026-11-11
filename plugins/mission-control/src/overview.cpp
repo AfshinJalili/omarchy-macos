@@ -2924,6 +2924,17 @@ void Overview::dropOnWorkspace(const PHLWINDOW& w, const StripItem& it, const LR
     // their new slots. replayReflow keeps the chrome settled (m_progress pinned at 1 —
     // no backdrop flash / strip re-slide); tiles render live, nothing to recapture.
     replayReflow(oldBoxes);
+
+    // Hovering the tile to drag it focused the window (focus_follows_mouse), and moving it
+    // does not take focus away: it kept the keyboard on a workspace that is not on screen,
+    // and Super + Shift + N, close and the rest acted on it there. Focus passes to the
+    // selected tile, as Hyprland's own silent move passes it on; to nothing when no tile of
+    // the live workspace is left.
+    if (Desktop::focusState()->window() == w) {
+        syncFocus();
+        if (Desktop::focusState()->window() == w)
+            Desktop::focusState()->fullWindowFocus(nullptr, Desktop::FOCUS_REASON_KEYBIND);
+    }
     damage();
 }
 

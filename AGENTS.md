@@ -21,7 +21,7 @@ The user works in the Hyprland session you would test in.
 
 - `tests/run-config.sh`: the whole config with Omarchy's floating workspaces, and settings switched off.
 - `tests/run-dialog.sh`: dialogs over a maximized window take clicks.
-- `plugins/mission-control/test/run-input.sh`: scrolling and clicking in Mission Control.
+- `plugins/mission-control/test/run-input.sh`: scrolling, clicking and dragging in Mission Control.
 - `plugins/titlebars/test/run-*.sh`: titlebar rendering, the swap with Omarchy's plugin, and the swipe.
 
 Trackpad swipes can't be faked without root (uinput), so they are tested by hand.
