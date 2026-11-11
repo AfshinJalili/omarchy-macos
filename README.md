@@ -31,7 +31,20 @@ Tap to click, two-finger right click and natural scrolling stay as Omarchy and y
 
 Two Omarchy themes come with it, **Macos Light** and **Macos Dark**: macOS colours, the WhiteSur icons, and menus at 80% opacity so the frosted glass from `look` shows through. Pick one with `omarchy theme set "Macos Dark"` or Omarchy's theme menu.
 
-They live in `themes/` and the installer links them into `~/.config/omarchy/themes/`, so this repository is the one copy. Edit them here, then run `omarchy theme set` again to apply the change. Wallpapers of your own go in `~/.config/omarchy/backgrounds/macos-dark/` (or `macos-light`), outside the repository.
+They live in `themes/` and the installer links them into `~/.config/omarchy/themes/`, so this repository is the one copy. Edit them here, then run `omarchy theme set` again to apply the change.
+
+### macOS wallpapers
+
+Apple's wallpapers are Apple's, so the themes ship plain gradients and `scripts/wallpapers.sh` fetches the real ones on request: every recent default wallpaper from Big Sur to Tahoe (from [512 Pixels](https://512pixels.net/projects/default-mac-wallpapers-in-5k/)), and Apple's live aerial wallpapers from Sonoma and Sequoia.
+
+```sh
+scripts/wallpapers.sh                          # list them
+scripts/wallpapers.sh tahoe-dark sonoma-horizon
+scripts/wallpapers.sh --light tahoe-light      # for Macos Light
+omarchy theme bg set ~/.config/omarchy/backgrounds/macos-dark/sonoma-horizon.mp4
+```
+
+They are saved to `~/.config/omarchy/backgrounds/macos-dark/` (or `macos-light/`), where Omarchy's background switcher lists them with the theme's own. A live wallpaper is a 600 MB 4K download, converted once with `ffmpeg` to 1440p at 60 fps so it plays lightly behind the desktop.
 
 ## Install
 
