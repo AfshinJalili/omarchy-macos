@@ -8,7 +8,7 @@ project(omarchy-macos-titlebars
 
 set(CMAKE_CXX_STANDARD 23)
 
-set(SRC main.cpp barDeco.cpp BarPassElement.cpp appName.cpp lights.cpp maximizedDecorations.cpp)
+set(SRC main.cpp barDeco.cpp BarPassElement.cpp appName.cpp lights.cpp maximizedDecorations.cpp deferShrink.cpp dragRestore.cpp)
 
 # Built as omarchy-macos-titlebars.so (no lib prefix). The Hyprland-facing plugin name
 # stays "hyprbars", so the hl.plugin.hyprbars Lua namespace and the

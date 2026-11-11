@@ -15,6 +15,8 @@ macOS-style title bars for [Hyprland](https://hyprland.org): traffic lights on t
 - **Unfocused windows.** Lights turn grey and the title dims.
 - **Monitors with different scales.** The title keeps its size when a window moves between monitors with different scales, including mid-drag across both.
 - **Bars stay during a swipe.** Hyprland drops the decorations of a maximized window while it slides past a workspace with a fullscreen window. The plugin turns them back on (`maximizedDecorations.cpp`).
+- **Content shrinks with its window.** A floating window coming back from maximized is told its new size once the animation ends. Told at the start, a browser or Electron app redraws small at once, and its content snaps ahead of the window's box, blur and shadow (`deferShrink.cpp`).
+- **Dragging out of maximized animates.** A maximized window pulled down by its titlebar shrinks to its old size under the pointer instead of jumping to it (`dragRestore.cpp`).
 - **Drop-in.** The plugin registers as `hyprbars` and keeps the `hl.plugin.hyprbars` Lua interface and `plugin.hyprbars.*` options, so configs written for hyprbars or Omarchy's titlebars keep working. Square buttons (`button_rounding` ≥ 0) still draw the classic way.
 
 It is a fork of [Omarchy's titlebars](https://github.com/omacom/omarchy-hyprland-titlebars), itself a fork of [hyprbars](https://github.com/hyprwm/hyprland-plugins/tree/main/hyprbars). Dragging, double-click to maximize, the `%WINDOW%` placeholder, app-name titles, and `workspace_tag` all come from those.
@@ -124,6 +126,8 @@ The scripts in `test/` run a disposable nested Hyprland through `tools/nested.sh
 ## Maintenance
 
 - `maximizedDecorations.cpp` hooks `IHyprRenderer::renderWindow`, which is outside the plugin API. A changed signature fails the build with a `static_assert`; a renamed function only logs a warning and loses the fix. Delete the file once Hyprland draws those windows with their own decorations.
+- `deferShrink.cpp` hooks `CWindow::sendWindowSize`, also outside the plugin API, with the same `static_assert` and warning. Delete it once Hyprland scales a client's new, smaller buffers to the animated size.
+- `dragRestore.cpp` hooks `CWindowTarget::warpPositionSize`, which a drag calls on every pointer motion, so a window shrinking out of maximized warps only its position. Same `static_assert` and warning.
 
 ## License
 

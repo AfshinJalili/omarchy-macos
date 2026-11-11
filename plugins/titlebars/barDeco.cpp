@@ -27,6 +27,7 @@
 #include "globals.hpp"
 #include "BarPassElement.hpp"
 #include "lights.hpp"
+#include "dragRestore.hpp"
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include "appName.hpp"
 
@@ -334,7 +335,8 @@ void COmarchyFloatingHyprBar::handleMovement() {
     box.x = cursor.x - box.w * anchor;
     box.y = cursor.y + reserved.topLeft.y - offset;
     g_layoutManager->setTargetGeom(box, window->layoutTarget());
-    window->layoutTarget()->warpPositionSize();
+    // It jumps under the pointer and shrinks there with an animation.
+    animateDragRestore(window);
   }
   g_layoutManager->beginDragTarget(window->layoutTarget(), MBIND_MOVE);
   m_bDraggingThis = true;
