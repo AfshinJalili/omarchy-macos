@@ -94,6 +94,7 @@ All upstream [hyprbars options](https://github.com/hyprwm/hyprland-plugins/tree/
 | `inactive_button_color` | `0` | When set, unfocused windows draw their buttons in this colour (grey lights). |
 | `bar_color_inactive` | transparent | Inactive title bar colour; transparent falls back to `bar_color`. |
 | `workspace_tag` | empty | When set, title bars apply only to floating windows with this tag. |
+| `live_resize` | `false` | While a floating window's size animates (maximize, restore, drag out of maximized), the app is told each size along the way, so its content re-lays out with the window instead of once at the end. Light apps keep up; browsers and Electron apps step a few times and can lag a frame behind. |
 
 `%WINDOW%` in a button `action` or `on_double_click` is replaced with the clicked window's address, so an action keeps its target even if focus changes before it runs.
 
@@ -126,7 +127,7 @@ The scripts in `test/` run a disposable nested Hyprland through `tools/nested.sh
 ## Maintenance
 
 - `maximizedDecorations.cpp` hooks `IHyprRenderer::renderWindow`, which is outside the plugin API. A changed signature fails the build with a `static_assert`; a renamed function only logs a warning and loses the fix. Delete the file once Hyprland draws those windows with their own decorations.
-- `deferShrink.cpp` hooks `CWindow::sendWindowSize`, also outside the plugin API, with the same `static_assert` and warning. Delete it once Hyprland scales a client's new, smaller buffers to the animated size.
+- `deferShrink.cpp` hooks `CWindowTarget::sendWindowSize`, through which every size goes out, also outside the plugin API, with the same `static_assert` and warning. Delete it once Hyprland scales a client's new, smaller buffers to the animated size.
 - `dragRestore.cpp` hooks `CWindowTarget::warpPositionSize`, which a drag calls on every pointer motion, so a window shrinking out of maximized warps only its position. Same `static_assert` and warning.
 
 ## License
