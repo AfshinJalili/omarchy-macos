@@ -10,6 +10,8 @@
 -- because the plugin table can outlive a config reload.
 
 local plugin = require("hypr.macos.plugin")
+-- Full screen gives a zoomed window back zoomed, like the zoom light expects.
+require("hypr.macos.zoom")
 
 local TITLEBARS = "/usr/lib/omarchy-hyprland-titlebars/titlebars.so"
 local MACOS_TITLEBARS = plugin.TITLEBARS

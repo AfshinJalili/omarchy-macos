@@ -10,7 +10,7 @@ macOS on [Omarchy](https://omarchy.org): titlebars with traffic lights, Mission 
 | `motion` | Windows zoom in softly and desktops slide sideways |
 | `cursor` | The WhiteSur cursor, when it is installed in `~/.local/share/icons` |
 | `spotlight` | Super + Space searches apps. The Omarchy menu moves to Super + Alt + Space |
-| `titlebars` | Titlebars with close, minimize and zoom lights on floating workspaces |
+| `titlebars` | Titlebars with close, minimize and zoom lights on floating workspaces; a zoomed window that goes full screen comes back zoomed |
 | `mission_control` | Mission Control: swipe up with three fingers, or Ctrl + Up |
 | `gestures` | The trackpad gestures below |
 | `three_finger_drag` | macOS's three-finger drag; the swipes move to four fingers |
