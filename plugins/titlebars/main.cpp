@@ -23,6 +23,7 @@
 #include "globals.hpp"
 #include "deferShrink.hpp"
 #include "dragRestore.hpp"
+#include "keepOnScreen.hpp"
 #include "maximizedDecorations.hpp"
 
 extern "C" {
@@ -242,6 +243,9 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
   static auto P3 = Event::bus()->m_events.window.updateRules.listen([&](PHLWINDOW w) { onUpdateWindowRules(w); });
   // A bar shows only on a floating window, so floating or tiling one decides it again.
   static auto P6 = Event::bus()->m_events.window.floating.listen([&](PHLWINDOW w) { onUpdateWindowRules(w); });
+  // A window opening, or coming back from maximized, can land with its bar under the top bar.
+  static auto P7 = Event::bus()->m_events.window.open.listen([&](PHLWINDOW w) { keepBarOnScreenLater(w); });
+  static auto P8 = Event::bus()->m_events.window.fullscreen.listen([&](PHLWINDOW w) { keepBarOnScreenLater(w, eBarMove::SLIDE); });
 
   g_pOmarchyFloatingGlobalState->config.barColor = makeShared<Config::Values::CColorValue>("plugin:hyprbars:bar_color", "Change the bar color", 0x88333333);
   g_pOmarchyFloatingGlobalState->config.textColor = makeShared<Config::Values::CColorValue>("plugin:hyprbars:col.text", "Change the text color", 0xffffffff);
@@ -306,6 +310,7 @@ static PLUGIN_DESCRIPTION_INFO initializeOmarchyFloating(HANDLE handle) {
   hookMaximizedDecorations();
   hookDeferShrink();
   hookDragRestore();
+  hookKeepOnScreen();
 
   // add deco to existing windows
   for (auto &w : Desktop::windowState()->windows()) {
@@ -325,6 +330,7 @@ static void exitOmarchyFloating() {
   unhookMaximizedDecorations();
   unhookDeferShrink();
   unhookDragRestore();
+  unhookKeepOnScreen();
 
   for (auto &m : State::monitorState()->monitors())
     m->m_scheduledRecalc = true;
